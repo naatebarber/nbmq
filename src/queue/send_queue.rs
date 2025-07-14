@@ -2,9 +2,9 @@ use std::collections::VecDeque;
 use std::error::Error;
 use std::hash::Hasher;
 
-use crate::consts;
 use crate::frame::Frame;
 use crate::util;
+use crate::{consts, errors::NBMQError};
 
 enum QueueItem {
     Frame(Vec<u8>),
@@ -39,9 +39,9 @@ impl SendQueue {
         hasher.finish()
     }
 
-    pub fn push(&mut self, data: &[&[u8]], nonce: u64) -> Result<(), Box<dyn Error>> {
+    pub fn push(&mut self, data: &[&[u8]], nonce: u64) -> Result<(), NBMQError> {
         if self.message_count >= self.high_water_mark {
-            return Err("send high water mark reached".into());
+            return Err(NBMQError::HighWaterMark);
         }
 
         let message_hash = SendQueue::hash(data, nonce);
@@ -49,11 +49,11 @@ impl SendQueue {
         let parts = data.len();
 
         if parts > u8::MAX as usize {
-            return Err(format!("message exceeds max length of {} parts", u8::MAX).into());
+            return Err(NBMQError::MessageTooLong);
         }
 
         if message_size > u32::MAX as usize {
-            return Err(format!("message exceeds max size of {} bytes", u32::MAX).into());
+            return Err(NBMQError::MessageTooLarge);
         }
 
         for (i, part) in data.iter().enumerate() {
@@ -71,7 +71,7 @@ impl SendQueue {
                     message_size as u32,
                     part_size as u32,
                     chunk_size as u16,
-                    chunk_offset as u16,
+                    chunk_offset as u32,
                     chunk,
                 );
 
@@ -94,7 +94,10 @@ impl SendQueue {
 
             match m {
                 QueueItem::Frame(f) => return Some(f),
-                QueueItem::Marker => self.message_count -= 1,
+                QueueItem::Marker => {
+                    self.message_count -= 1;
+                    return None;
+                }
             }
         }
     }

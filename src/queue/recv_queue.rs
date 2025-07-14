@@ -1,9 +1,6 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    error::Error,
-};
+use std::collections::{HashMap, VecDeque};
 
-use crate::{consts, frame::Frame};
+use crate::{consts, errors::NBMQError, frame::Frame};
 
 #[derive(Clone)]
 pub struct MessagePart {
@@ -26,13 +23,13 @@ impl MessagePart {
         }
     }
 
-    pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, Box<dyn Error>> {
-        if (frame.chunk_offset + frame.chunk_size) as u32 > self.size {
-            return Err("invalid chunk bounds".into());
+    pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, NBMQError> {
+        if (frame.chunk_offset + frame.chunk_size as u32) > self.size {
+            return Err(NBMQError::FrameCorrupt);
         }
 
-        let range =
-            (frame.chunk_offset as usize)..((frame.chunk_offset + frame.chunk_size) as usize);
+        let range = (frame.chunk_offset as usize)
+            ..((frame.chunk_offset + frame.chunk_size as u32) as usize);
         self.data[range].copy_from_slice(&frame.chunk);
         self.assigned += frame.chunk_size as u32;
 
@@ -68,7 +65,7 @@ impl IncomingMessage {
         }
     }
 
-    pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, Box<dyn Error>> {
+    pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, NBMQError> {
         let part = &mut self.parts[frame.part_index as usize]
             .get_or_insert(MessagePart::new(frame.part_size));
         if part.add_frame(&frame)? {
@@ -102,18 +99,18 @@ impl RecvQueue {
         }
     }
 
-    pub fn push(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
+    pub fn push(&mut self, data: &[u8]) -> Result<(), NBMQError> {
         if data.len() < consts::HEADER_SIZE {
-            return Err("message too short".into());
+            return Err(NBMQError::FrameCorrupt);
         }
 
-        let frame = Frame::parse(data)?;
+        let frame = Frame::parse(data).map_err(|_| NBMQError::FrameCorrupt)?;
 
         let message = match self.incoming.get_mut(&frame.message_hash) {
             Some(m) => m,
             None => {
                 if self.incoming.len() >= self.high_water_mark {
-                    return Err("incoming message high water mark reached".into());
+                    return Err(NBMQError::HighWaterMark);
                 }
 
                 self.incoming
@@ -132,7 +129,7 @@ impl RecvQueue {
                         .collect::<Vec<Vec<u8>>>();
                     self.complete.push_back(reassembly);
                 } else {
-                    return Err("completed message high water mark reached".into());
+                    return Err(NBMQError::HighWaterMark);
                 }
             }
         }

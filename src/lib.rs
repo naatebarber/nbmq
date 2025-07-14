@@ -1,5 +1,8 @@
-pub mod consts;
-pub mod frame;
-pub mod queue;
-pub mod socket;
-pub mod util;
+mod consts;
+pub mod errors;
+mod frame;
+mod queue;
+mod socket;
+mod util;
+
+pub use socket::dealer::Dealer;
