@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{error::Error, net::SocketAddr};
 
 use crate::{
     consts,
@@ -31,11 +31,11 @@ impl Dealer {
         }
     }
 
-    pub fn bind(addr: &str) -> Result<Self, NBMQError> {
+    pub fn bind(addr: &str) -> Result<Self, Box<dyn Error>> {
         Ok(Dealer::new_from(Socket::bind(addr)?))
     }
 
-    pub fn connect(addr: &str) -> Result<Self, NBMQError> {
+    pub fn connect(addr: &str) -> Result<Self, Box<dyn Error>> {
         Ok(Dealer::new_from(Socket::connect(addr)?))
     }
 
@@ -49,7 +49,9 @@ impl Dealer {
         return Ok(&self.peers[self.unique as usize % peer_ct]);
     }
 
-    pub fn send_multipart(&mut self, data: &[&[u8]]) -> Result<(), NBMQError> {
+    /// Send a multipart message to one or many peers
+    /// - In the case of multiple peers, routing is handled in a round-robin fashion
+    pub fn send_multipart(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
         self.send_queue.push(data, self.unique)?;
         self.unique = self.unique.wrapping_add(1);
         if let Some(peer_update) = self.socket.update_peers() {
@@ -59,15 +61,17 @@ impl Dealer {
         let peer = self.select_fair_queue_peer()?.clone();
 
         while let Some(frame) = self.send_queue.pull() {
-            self.socket.send_peer(&peer, &frame)?;
+            self.socket.send_peer(&frame, &peer)?;
         }
 
         Ok(())
     }
 
-    pub fn recv_multipart(&mut self) -> Result<Vec<Vec<u8>>, NBMQError> {
+    /// Receive a multipart message from one or many peers
+    /// - In the case of many peers, the order of received messages is first come first serve
+    pub fn recv_multipart(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
         loop {
-            let frame = self.socket.recv()?;
+            let (frame, _peer) = self.socket.recv()?;
             self.recv_queue.push(&frame)?;
 
             if let Some(message) = self.recv_queue.pull() {

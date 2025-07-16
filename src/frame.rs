@@ -59,3 +59,24 @@ impl Frame<'_> {
         })
     }
 }
+
+pub enum ControlFrame {
+    Heartbeat,
+}
+
+impl ControlFrame {
+    pub fn encode(&self) -> Vec<u8> {
+        match self {
+            Self::Heartbeat => Frame::encode(0, 0, 0, 0, 0, 0, 0, &[]),
+        }
+    }
+
+    pub fn parse(frame: &[u8]) -> Result<Option<ControlFrame>, Box<dyn Error>> {
+        let message_hash = u64::from_be_bytes(frame[0..8].try_into()?);
+
+        Ok(match message_hash {
+            0 => Some(ControlFrame::Heartbeat),
+            _ => None,
+        })
+    }
+}
