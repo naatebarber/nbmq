@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 
-use crate::{consts, frame::ControlFrame};
+use crate::{consts, frame::ControlFrame, opt::SockOpt};
 
 #[derive(PartialEq, Eq)]
 pub enum SockMode {
@@ -30,6 +30,7 @@ impl Peer {
 
 pub struct Socket {
     sock: UdpSocket,
+    opt: SockOpt,
 
     pub mode: SockMode,
     pub peer_update: bool,
@@ -43,6 +44,7 @@ impl Socket {
 
         Ok(Socket {
             sock: socket,
+            opt: SockOpt::default(),
 
             mode: SockMode::Bind,
             peer_update: true,
@@ -63,6 +65,7 @@ impl Socket {
 
         Ok(Socket {
             sock,
+            opt: SockOpt::default(),
 
             mode: SockMode::Connect(peer_addr),
             peer_update: true,
@@ -93,7 +96,7 @@ impl Socket {
 
         peer.last_seen = Instant::now();
 
-        if Instant::now().duration_since(peer.last_sent).as_secs_f64() > consts::PEER_HEARTBEAT_IVL
+        if peer.last_seen.duration_since(peer.last_sent).as_secs_f64() > self.opt.peer_heartbeat_ivl
         {
             peer.last_sent = Instant::now();
             self.send_peer(&ControlFrame::Heartbeat.encode(), &recv_addr)?;
@@ -150,7 +153,7 @@ impl Socket {
                     peer.last_sent = Instant::now();
 
                     if Instant::now().duration_since(peer.last_seen).as_secs_f64()
-                        > consts::PEER_KEEPALIVE
+                        > self.opt.peer_keepalive
                     {
                         drop_stale_peers.push(peer_addr.clone());
                         self.peer_update = true;
@@ -185,7 +188,7 @@ impl Socket {
 
         peer.last_sent = Instant::now();
 
-        if Instant::now().duration_since(peer.last_seen).as_secs_f64() > consts::PEER_KEEPALIVE {
+        if Instant::now().duration_since(peer.last_seen).as_secs_f64() > self.opt.peer_keepalive {
             self.peers.remove(&peer_addr);
             self.peer_update = true;
         }
@@ -200,5 +203,9 @@ impl Socket {
         }
 
         return None;
+    }
+
+    pub fn set_sock_opt(&mut self, opt: SockOpt) {
+        self.opt = opt;
     }
 }

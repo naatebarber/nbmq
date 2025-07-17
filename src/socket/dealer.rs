@@ -79,4 +79,14 @@ impl Dealer {
             }
         }
     }
+
+    /// Receive control frames only on the socket, discarding any potential data frames.
+    /// Useful for keeping telemetry up to date on send-only connections.
+    pub fn drain_control(&mut self) -> Result<(), Box<dyn Error>> {
+        while let Ok(_) = self.socket.recv() {
+            continue;
+        }
+
+        Ok(())
+    }
 }
