@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     error::Error,
     io,
     time::Instant,
@@ -12,6 +12,7 @@ pub struct MessagePart {
     pub size: u32,
 
     pub assigned: u32,
+    pub assigned_ranges: HashSet<(u32, u32)>,
     pub data: Vec<u8>,
 }
 
@@ -24,19 +25,28 @@ impl MessagePart {
             size,
 
             assigned: 0,
+            assigned_ranges: HashSet::new(),
             data,
         }
     }
 
     pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, Box<dyn Error>> {
+        if self.assigned == self.size {
+            return Ok(false);
+        }
+
         if (frame.chunk_offset + frame.chunk_size as u32) > self.size {
             return Err(Box::new(io::Error::from(io::ErrorKind::InvalidData)));
         }
 
-        let range = (frame.chunk_offset as usize)
-            ..((frame.chunk_offset + frame.chunk_size as u32) as usize);
-        self.data[range].copy_from_slice(&frame.chunk);
-        self.assigned += frame.chunk_size as u32;
+        let start = frame.chunk_offset;
+        let end = frame.chunk_offset + frame.chunk_size as u32;
+        let range = (start as usize)..(end as usize);
+
+        if self.assigned_ranges.insert((start, end)) {
+            self.data[range].copy_from_slice(&frame.chunk);
+            self.assigned += frame.chunk_size as u32;
+        }
 
         if self.assigned == self.size {
             return Ok(true);
@@ -77,11 +87,12 @@ impl IncomingMessage {
     pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, Box<dyn Error>> {
         let part = &mut self.parts[frame.part_index as usize]
             .get_or_insert(MessagePart::new(frame.part_size));
+
         if part.add_frame(&frame)? {
             self.completed_parts += 1;
+            self.assigned += part.assigned;
         }
 
-        self.assigned += frame.chunk_size as u32;
         self.last_modify = Instant::now();
 
         if self.completed_parts == self.part_count && self.assigned == self.size {
