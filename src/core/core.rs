@@ -6,7 +6,8 @@ use std::{
     time::Instant,
 };
 
-use crate::{consts, frame::ControlFrame, opt::SockOpt};
+use super::sock_opt::SockOpt;
+use crate::{consts, frame::ControlFrame};
 
 #[derive(PartialEq, Eq)]
 pub enum SockMode {
@@ -28,7 +29,7 @@ impl Peer {
     }
 }
 
-pub struct Socket {
+pub struct Core {
     sock: UdpSocket,
     opt: SockOpt,
 
@@ -37,14 +38,14 @@ pub struct Socket {
     pub peers: HashMap<SocketAddr, Peer>,
 }
 
-impl Socket {
-    pub fn bind(addr: &str) -> Result<Socket, Box<dyn Error>> {
+impl Core {
+    pub fn bind(addr: &str, opt: SockOpt) -> Result<Core, Box<dyn Error>> {
         let socket = UdpSocket::bind(addr)?;
         socket.set_nonblocking(true)?;
 
-        Ok(Socket {
+        Ok(Core {
             sock: socket,
-            opt: SockOpt::default(),
+            opt,
 
             mode: SockMode::Bind,
             peer_update: true,
@@ -52,7 +53,7 @@ impl Socket {
         })
     }
 
-    pub fn connect(addr: &str) -> Result<Socket, Box<dyn Error>> {
+    pub fn connect(addr: &str, opt: SockOpt) -> Result<Core, Box<dyn Error>> {
         let sock = UdpSocket::bind("127.0.0.1:0")?;
         sock.set_nonblocking(true)?;
 
@@ -63,9 +64,9 @@ impl Socket {
         let mut peers = HashMap::new();
         peers.insert(peer_addr.clone(), peer);
 
-        Ok(Socket {
+        Ok(Core {
             sock,
-            opt: SockOpt::default(),
+            opt,
 
             mode: SockMode::Connect(peer_addr),
             peer_update: true,
@@ -99,7 +100,7 @@ impl Socket {
         if peer.last_seen.duration_since(peer.last_sent).as_secs_f64() > self.opt.peer_heartbeat_ivl
         {
             peer.last_sent = Instant::now();
-            self.send_peer(&ControlFrame::Heartbeat.encode(), &recv_addr)?;
+            self.send_peer(&ControlFrame::Heartbeat.encode(&[]), &recv_addr)?;
         }
 
         Ok((buffer, recv_addr))
@@ -203,9 +204,5 @@ impl Socket {
         }
 
         return None;
-    }
-
-    pub fn set_sock_opt(&mut self, opt: SockOpt) {
-        self.opt = opt;
     }
 }

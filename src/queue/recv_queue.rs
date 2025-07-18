@@ -1,6 +1,10 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    error::Error,
+    io,
+};
 
-use crate::{consts, errors::NBMQError, frame::Frame};
+use crate::{consts, frame::Frame};
 
 #[derive(Clone)]
 pub struct MessagePart {
@@ -23,9 +27,9 @@ impl MessagePart {
         }
     }
 
-    pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, NBMQError> {
+    pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, Box<dyn Error>> {
         if (frame.chunk_offset + frame.chunk_size as u32) > self.size {
-            return Err(NBMQError::FrameCorrupt);
+            return Err(Box::new(io::Error::from(io::ErrorKind::InvalidData)));
         }
 
         let range = (frame.chunk_offset as usize)
@@ -65,7 +69,7 @@ impl IncomingMessage {
         }
     }
 
-    pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, NBMQError> {
+    pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, Box<dyn Error>> {
         let part = &mut self.parts[frame.part_index as usize]
             .get_or_insert(MessagePart::new(frame.part_size));
         if part.add_frame(&frame)? {
@@ -99,18 +103,18 @@ impl RecvQueue {
         }
     }
 
-    pub fn push(&mut self, data: &[u8]) -> Result<(), NBMQError> {
+    pub fn push(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
         if data.len() < consts::HEADER_SIZE {
-            return Err(NBMQError::FrameCorrupt);
+            return Err(Box::new(io::Error::from(io::ErrorKind::InvalidData)));
         }
 
-        let frame = Frame::parse(data).map_err(|_| NBMQError::FrameCorrupt)?;
+        let frame = Frame::parse(data)?;
 
         let message = match self.incoming.get_mut(&frame.message_hash) {
             Some(m) => m,
             None => {
                 if self.incoming.len() >= self.high_water_mark {
-                    return Err(NBMQError::HighWaterMark);
+                    return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
                 }
 
                 self.incoming
@@ -129,7 +133,7 @@ impl RecvQueue {
                         .collect::<Vec<Vec<u8>>>();
                     self.complete.push_back(reassembly);
                 } else {
-                    return Err(NBMQError::HighWaterMark);
+                    return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
                 }
             }
         }

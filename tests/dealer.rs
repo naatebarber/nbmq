@@ -1,6 +1,6 @@
 use std::{error::Error, thread, time::Duration};
 
-use nbmq::Dealer;
+use nbmq::{AsSocket, Socket};
 
 fn sleep() {
     thread::sleep(Duration::from_millis(100));
@@ -8,8 +8,8 @@ fn sleep() {
 
 #[test]
 pub fn basic_send() -> Result<(), Box<dyn Error>> {
-    let mut server = Dealer::bind("0.0.0.0:2000")?;
-    let mut client = Dealer::connect("127.0.0.1:2000")?;
+    let mut server = Socket::Dealer.new().bind("0.0.0.0:2000")?;
+    let mut client = Socket::Dealer.new().connect("127.0.0.1:2000")?;
 
     let msg = "Hello World!";
     client.send_multipart(&[msg.as_bytes()])?;
@@ -25,8 +25,8 @@ pub fn basic_send() -> Result<(), Box<dyn Error>> {
 
 #[test]
 pub fn ping_pong() -> Result<(), Box<dyn Error>> {
-    let mut server = Dealer::bind("0.0.0.0:2001")?;
-    let mut client = Dealer::connect("127.0.0.1:2001")?;
+    let mut server = Socket::Dealer.new().bind("0.0.0.0:2001")?;
+    let mut client = Socket::Dealer.new().connect("127.0.0.1:2001")?;
 
     let msg = "Ping";
     client.send_multipart(&[msg.as_bytes()])?;
@@ -51,10 +51,10 @@ pub fn ping_pong() -> Result<(), Box<dyn Error>> {
 
 #[test]
 pub fn round_robin() -> Result<(), Box<dyn Error>> {
-    let mut server = Dealer::bind("0.0.0.0:2002")?;
-    let mut a = Dealer::connect("127.0.0.1:2002")?;
-    let mut b = Dealer::connect("127.0.0.1:2002")?;
-    let mut c = Dealer::connect("127.0.0.1:2002")?;
+    let mut server = Socket::Dealer.new().bind("0.0.0.0:2002")?;
+    let mut a = Socket::Dealer.new().connect("127.0.0.1:2002")?;
+    let mut b = Socket::Dealer.new().connect("127.0.0.1:2002")?;
+    let mut c = Socket::Dealer.new().connect("127.0.0.1:2002")?;
 
     sleep();
     // prime the connnections
@@ -96,8 +96,8 @@ pub fn round_robin() -> Result<(), Box<dyn Error>> {
 
 #[test]
 pub fn large_message() -> Result<(), Box<dyn Error>> {
-    let mut server = Dealer::bind("0.0.0.0:2003")?;
-    let mut client = Dealer::connect("127.0.0.1:2003")?;
+    let mut server = Socket::Dealer.new().bind("0.0.0.0:2003")?;
+    let mut client = Socket::Dealer.new().connect("127.0.0.1:2003")?;
 
     let mut large_bin = vec![];
     for _ in 0..100000 {
@@ -119,9 +119,8 @@ pub fn large_message() -> Result<(), Box<dyn Error>> {
 
 #[test]
 pub fn long_message() -> Result<(), Box<dyn Error>> {
-    let mut server = Dealer::bind("0.0.0.0:2004")?;
-    sleep();
-    let mut client = Dealer::connect("127.0.0.1:2004")?;
+    let mut server = Socket::Dealer.new().bind("0.0.0.0:2004")?;
+    let mut client = Socket::Dealer.new().connect("127.0.0.1:2004")?;
 
     sleep();
 

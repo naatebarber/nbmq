@@ -65,9 +65,9 @@ pub enum ControlFrame {
 }
 
 impl ControlFrame {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self, chunk: &[u8]) -> Vec<u8> {
         match self {
-            Self::Heartbeat => Frame::encode(0, 0, 0, 0, 0, 0, 0, &[]),
+            Self::Heartbeat => Frame::encode(0, 0, 0, 0, 0, 0, 0, chunk),
         }
     }
 

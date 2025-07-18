@@ -1,6 +1,0 @@
- - Send peer heartbeat when recv called.
- - Add telemetry function, for publish sockets, or sockets that dont require recv_multipart, since they still need to ingest control frames
- - Add socket options
- - In socket options, add autoflush, which will flush the socket periodically on send_multipart
- - In socket options, add highwatermark settings
- - Send a heartbeat control frame when a client mode:Connect socket connects to a server mode:Bind socket

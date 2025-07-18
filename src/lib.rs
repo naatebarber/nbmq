@@ -1,9 +1,11 @@
+pub mod api;
 mod consts;
-pub mod errors;
+mod core;
 mod frame;
 mod queue;
-mod socket;
+mod sockets;
 mod util;
-mod opt;
 
-pub use socket::dealer::Dealer;
+pub use crate::api::*;
+pub use crate::core::*;
+pub use crate::sockets::*;

@@ -1,5 +1,6 @@
 use crate::consts;
 
+#[derive(Clone, Debug)]
 pub struct SockOpt {
     pub peer_keepalive: f64,
     pub peer_heartbeat_ivl: f64,
@@ -13,4 +14,3 @@ impl Default for SockOpt {
         }
     }
 }
-

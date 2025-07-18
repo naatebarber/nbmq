@@ -1,9 +1,11 @@
 use std::collections::VecDeque;
+use std::error::Error;
 use std::hash::Hasher;
+use std::io;
 
+use crate::consts;
 use crate::frame::Frame;
 use crate::util;
-use crate::{consts, errors::NBMQError};
 
 enum QueueItem {
     Frame(Vec<u8>),
@@ -38,9 +40,9 @@ impl SendQueue {
         hasher.finish()
     }
 
-    pub fn push(&mut self, data: &[&[u8]], nonce: u64) -> Result<(), NBMQError> {
+    pub fn push(&mut self, data: &[&[u8]], nonce: u64) -> Result<(), Box<dyn Error>> {
         if self.message_count >= self.high_water_mark {
-            return Err(NBMQError::HighWaterMark);
+            return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
         }
 
         let message_hash = SendQueue::hash(data, nonce);
@@ -48,11 +50,11 @@ impl SendQueue {
         let parts = data.len();
 
         if parts > u8::MAX as usize {
-            return Err(NBMQError::MessageTooLong);
+            return Err("Message too long, exceeds 256 parts".into());
         }
 
         if message_size > u32::MAX as usize {
-            return Err(NBMQError::MessageTooLarge);
+            return Err("Message too large, exceeds 4GB".into());
         }
 
         for (i, part) in data.iter().enumerate() {
