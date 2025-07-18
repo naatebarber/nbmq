@@ -2,10 +2,11 @@ pub mod api;
 mod consts;
 mod core;
 mod frame;
-mod queue;
+pub mod queue;
 mod sockets;
 mod util;
 
 pub use crate::api::*;
 pub use crate::core::*;
 pub use crate::sockets::*;
+pub use crate::util::*;

@@ -9,7 +9,7 @@ use crate::util;
 use crate::util::hash::Fnv1a64;
 use crate::{SockOpt, consts};
 
-enum QueueItem {
+pub enum QueueItem {
     Frame(Vec<u8>),
     Marker,
 }
@@ -17,11 +17,11 @@ enum QueueItem {
 pub struct SendQueue {
     opt: SockOpt,
 
-    message_count: usize,
-    frames: VecDeque<QueueItem>,
+    pub message_count: usize,
+    pub frames: VecDeque<QueueItem>,
 
-    sent: HashMap<u64, Vec<u8>>,
-    exp: VecDeque<(u64, Instant, usize)>,
+    pub sent: HashMap<u64, Vec<u8>>,
+    pub exp: VecDeque<(u64, Instant, usize)>,
 }
 
 impl SendQueue {
@@ -118,7 +118,8 @@ impl SendQueue {
             && now.duration_since(self.exp[0].1).as_secs_f64() > self.opt.safe_resend_ivl
         {
             if let Some((hash, .., send_ct)) = self.exp.pop_front() {
-                if send_ct > self.opt.safe_resend_limit {
+                if send_ct >= self.opt.safe_resend_limit {
+                    self.sent.remove(&hash);
                     continue;
                 }
 
@@ -143,8 +144,7 @@ impl SendQueue {
                     let hash = hasher.finish();
 
                     self.sent.insert(hash, f.clone());
-
-                    self.exp.push_back((hash, Instant::now(), 1));
+                    self.exp.push_back((hash, Instant::now(), 0));
 
                     return Some(f);
                 }

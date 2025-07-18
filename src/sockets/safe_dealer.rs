@@ -1,7 +1,6 @@
 use std::{error::Error, hash::Hasher, net::SocketAddr};
 
 use crate::{
-    consts,
     core::{AsSocket, Core, SockOpt},
     frame::ControlFrame,
     queue::{RecvQueue, SendQueue},
@@ -28,8 +27,8 @@ impl SafeDealer {
             unique: 0,
             peers: vec![],
 
-            send_queue: SendQueue::new(opt),
-            recv_queue: RecvQueue::new(consts::SOCKET_DEFAULT_HWM),
+            send_queue: SendQueue::new(opt.clone()),
+            recv_queue: RecvQueue::new(opt),
         }
     }
 

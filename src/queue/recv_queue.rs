@@ -2,9 +2,10 @@ use std::{
     collections::{HashMap, VecDeque},
     error::Error,
     io,
+    time::Instant,
 };
 
-use crate::{consts, frame::Frame};
+use crate::{SockOpt, consts, frame::Frame};
 
 #[derive(Clone)]
 pub struct MessagePart {
@@ -52,6 +53,8 @@ pub struct IncomingMessage {
 
     pub assigned: u32,
     pub parts: Vec<Option<MessagePart>>,
+
+    pub last_modify: Instant,
 }
 
 impl IncomingMessage {
@@ -66,6 +69,8 @@ impl IncomingMessage {
             assigned: 0,
             completed_parts: 0,
             parts,
+
+            last_modify: Instant::now(),
         }
     }
 
@@ -77,6 +82,7 @@ impl IncomingMessage {
         }
 
         self.assigned += frame.chunk_size as u32;
+        self.last_modify = Instant::now();
 
         if self.completed_parts == self.part_count && self.assigned == self.size {
             return Ok(true);
@@ -87,20 +93,38 @@ impl IncomingMessage {
 }
 
 pub struct RecvQueue {
-    pub high_water_mark: usize,
+    pub opt: SockOpt,
 
     pub incoming: HashMap<u64, IncomingMessage>,
     pub complete: VecDeque<Vec<Vec<u8>>>,
+
+    pub last_maint: Instant,
 }
 
 impl RecvQueue {
-    pub fn new(high_water_mark: usize) -> Self {
+    pub fn new(opt: SockOpt) -> Self {
         Self {
-            high_water_mark,
+            opt,
 
             incoming: HashMap::new(),
             complete: VecDeque::new(),
+
+            last_maint: Instant::now(),
         }
+    }
+
+    fn maint(&mut self) {
+        let now = Instant::now();
+
+        if now.duration_since(self.last_maint).as_secs_f64() < self.opt.queue_maint_ivl {
+            return;
+        }
+
+        self.incoming.retain(|_, v| {
+            now.duration_since(v.last_modify).as_secs_f64() < self.opt.uncompleted_message_ttl
+        });
+
+        self.last_maint = now;
     }
 
     pub fn push(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
@@ -113,7 +137,7 @@ impl RecvQueue {
         let message = match self.incoming.get_mut(&frame.message_hash) {
             Some(m) => m,
             None => {
-                if self.incoming.len() >= self.high_water_mark {
+                if self.incoming.len() >= self.opt.recv_hwm {
                     return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
                 }
 
@@ -125,7 +149,7 @@ impl RecvQueue {
 
         if message.add_frame(&frame)? {
             if let Some(message) = self.incoming.remove(&frame.message_hash) {
-                if self.complete.len() < self.high_water_mark {
+                if self.complete.len() < self.opt.recv_hwm {
                     let reassembly = message
                         .parts
                         .into_iter()
@@ -142,6 +166,7 @@ impl RecvQueue {
     }
 
     pub fn pull(&mut self) -> Option<Vec<Vec<u8>>> {
+        self.maint();
         self.complete.pop_front()
     }
 }
