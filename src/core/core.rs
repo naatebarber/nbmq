@@ -100,37 +100,37 @@ impl Core {
         if peer.last_seen.duration_since(peer.last_sent).as_secs_f64() > self.opt.peer_heartbeat_ivl
         {
             peer.last_sent = Instant::now();
-            self.send_peer(&ControlFrame::Heartbeat.encode(&[]), &recv_addr)?;
+            self.send_peer(&ControlFrame::Heartbeat(vec![]).encode(), &recv_addr)?;
         }
 
         Ok((buffer, recv_addr))
     }
 
-    fn recv_control(&mut self, data: &[u8], peer_addr: &SocketAddr) -> bool {
-        let Ok(Some(control_frame)) = ControlFrame::parse(data) else {
-            return false;
+    fn handle_control(&mut self, data: &[u8], peer_addr: &SocketAddr) -> Option<ControlFrame> {
+        let Ok(Some(control_frame)) = ControlFrame::parse(&data) else {
+            return None;
         };
 
         match control_frame {
-            ControlFrame::Heartbeat => {
+            ControlFrame::Heartbeat(_) => {
                 let peer = self.peers.entry(peer_addr.clone()).or_insert_with(|| {
                     self.peer_update = true;
                     Peer::new()
                 });
 
                 peer.last_seen = Instant::now();
-
-                return true;
             }
+            _ => (),
         }
+
+        return Some(control_frame);
     }
 
-    pub fn recv(&mut self) -> Result<(Vec<u8>, SocketAddr), Box<dyn Error>> {
+    pub fn recv(&mut self) -> Result<(Vec<u8>, SocketAddr, Option<ControlFrame>), Box<dyn Error>> {
         loop {
             let (frame, peer_addr) = self.recv_frame()?;
-            if !self.recv_control(&frame, &peer_addr) {
-                return Ok((frame, peer_addr));
-            }
+            let control = self.handle_control(&frame, &peer_addr);
+            return Ok((frame, peer_addr, control));
         }
     }
 

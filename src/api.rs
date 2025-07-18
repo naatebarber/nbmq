@@ -1,35 +1,25 @@
 use std::error::Error;
 
-use crate::{AsSocket, Dealer, SockOpt};
+use crate::{AsSocket, SockOpt};
 
-pub enum Socket {
-    Dealer,
-}
-
-impl Socket {
-    pub fn new(self) -> SocketConfig {
-        SocketConfig {
-            sock_type: self,
-            opt: SockOpt::default(),
-        }
-    }
-}
-
-pub struct SocketConfig {
-    sock_type: Socket,
+pub struct Socket<T> {
     pub opt: SockOpt,
+    _phantom: std::marker::PhantomData<T>,
 }
 
-impl SocketConfig {
-    pub fn bind(self, addr: &str) -> Result<impl AsSocket, Box<dyn Error>> {
-        match self.sock_type {
-            Socket::Dealer => Dealer::bind(addr, self.opt),
+impl<T: AsSocket> Socket<T> {
+    pub fn new() -> Socket<T> {
+        Socket {
+            opt: SockOpt::default(),
+            _phantom: std::marker::PhantomData::default(),
         }
     }
 
-    pub fn connect(self, addr: &str) -> Result<impl AsSocket, Box<dyn Error>> {
-        match self.sock_type {
-            Socket::Dealer => Dealer::connect(addr, self.opt),
-        }
+    pub fn bind(self, addr: &str) -> Result<T::Output, Box<dyn Error>> {
+        T::bind(addr, self.opt)
+    }
+
+    pub fn connect(self, addr: &str) -> Result<T::Output, Box<dyn Error>> {
+        T::connect(addr, self.opt)
     }
 }

@@ -1,13 +1,14 @@
-use std::{error::Error, net::SocketAddr};
+use std::{error::Error, hash::Hasher, net::SocketAddr};
 
 use crate::{
     consts,
     core::{AsSocket, Core, SockOpt},
     frame::ControlFrame,
     queue::{RecvQueue, SendQueue},
+    util::hash::Fnv1a64,
 };
 
-pub struct Dealer {
+pub struct SafeDealer {
     core: Core,
     opt: SockOpt,
 
@@ -18,7 +19,7 @@ pub struct Dealer {
     recv_queue: RecvQueue,
 }
 
-impl Dealer {
+impl SafeDealer {
     fn new_from(core: Core, opt: SockOpt) -> Self {
         Self {
             core,
@@ -43,15 +44,15 @@ impl Dealer {
     }
 }
 
-impl AsSocket for Dealer {
-    type Output = Dealer;
+impl AsSocket for SafeDealer {
+    type Output = SafeDealer;
 
     fn bind(addr: &str, opt: SockOpt) -> Result<Self::Output, Box<dyn Error>> {
-        Ok(Dealer::new_from(Core::bind(addr, opt.clone())?, opt))
+        Ok(SafeDealer::new_from(Core::bind(addr, opt.clone())?, opt))
     }
 
     fn connect(addr: &str, opt: SockOpt) -> Result<Self::Output, Box<dyn Error>> {
-        Ok(Dealer::new_from(Core::connect(addr, opt.clone())?, opt))
+        Ok(SafeDealer::new_from(Core::connect(addr, opt.clone())?, opt))
     }
 
     fn send_multipart(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
@@ -63,7 +64,7 @@ impl AsSocket for Dealer {
 
         let peer = self.select_fair_queue_peer()?.clone();
 
-        while let Some(frame) = self.send_queue.pull() {
+        while let Some(frame) = self.send_queue.pull_safe() {
             self.core.send_peer(&frame, &peer)?;
         }
 
@@ -72,11 +73,35 @@ impl AsSocket for Dealer {
 
     fn recv_multipart(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
         loop {
-            let (frame, .., control) = self.core.recv()?;
+            let (frame, peer_addr, control) = self.core.recv()?;
 
-            if let Some(_) = control {
+            if let Some(control) = control {
+                match control {
+                    ControlFrame::Ack(chunk) => {
+                        if chunk.len() != 8 {
+                            continue;
+                        }
+
+                        let mut hash_b = [0u8; 8];
+                        hash_b[0..8].copy_from_slice(&chunk[0..8]);
+                        let hash = u64::from_be_bytes(hash_b);
+
+                        self.send_queue.confirm_safe(hash);
+                    }
+                    _ => (),
+                };
+
                 continue;
             }
+
+            let mut hasher = Fnv1a64::new();
+            hasher.write(&frame);
+            let hash = hasher.finish();
+
+            self.core.send_peer(
+                &ControlFrame::Ack(hash.to_be_bytes().to_vec()).encode(),
+                &peer_addr,
+            )?;
 
             self.recv_queue.push(&frame)?;
 

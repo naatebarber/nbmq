@@ -3,10 +3,12 @@ use std::error::Error;
 use super::sock_opt::SockOpt;
 
 pub trait AsSocket {
+    type Output: AsSocket;
+
     /// Create a bound socket at a specified address
-    fn bind(addr: &str, opt: SockOpt) -> Result<impl AsSocket, Box<dyn Error>>;
+    fn bind(addr: &str, opt: SockOpt) -> Result<Self::Output, Box<dyn Error>>;
     /// Create a bound socket at a random high port and connect it to a remote address
-    fn connect(addr: &str, opt: SockOpt) -> Result<impl AsSocket, Box<dyn Error>>;
+    fn connect(addr: &str, opt: SockOpt) -> Result<Self::Output, Box<dyn Error>>;
 
     /// Send a multipart message
     fn send_multipart(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>>;

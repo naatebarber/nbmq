@@ -61,13 +61,15 @@ impl Frame<'_> {
 }
 
 pub enum ControlFrame {
-    Heartbeat,
+    Heartbeat(Vec<u8>),
+    Ack(Vec<u8>),
 }
 
 impl ControlFrame {
-    pub fn encode(&self, chunk: &[u8]) -> Vec<u8> {
+    pub fn encode(&self) -> Vec<u8> {
         match self {
-            Self::Heartbeat => Frame::encode(0, 0, 0, 0, 0, 0, 0, chunk),
+            Self::Heartbeat(chunk) => Frame::encode(0, 0, 0, 0, 0, 0, 0, chunk),
+            Self::Ack(chunk) => Frame::encode(1, 0, 0, 0, 0, 0, 0, chunk),
         }
     }
 
@@ -75,7 +77,8 @@ impl ControlFrame {
         let message_hash = u64::from_be_bytes(frame[0..8].try_into()?);
 
         Ok(match message_hash {
-            0 => Some(ControlFrame::Heartbeat),
+            0 => Some(ControlFrame::Heartbeat(frame[HEADER_SIZE..].to_vec())),
+            1 => Some(ControlFrame::Ack(frame[HEADER_SIZE..].to_vec())),
             _ => None,
         })
     }

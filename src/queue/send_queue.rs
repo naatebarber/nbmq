@@ -1,11 +1,13 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::hash::Hasher;
 use std::io;
+use std::time::Instant;
 
-use crate::consts;
 use crate::frame::Frame;
 use crate::util;
+use crate::util::hash::Fnv1a64;
+use crate::{SockOpt, consts};
 
 enum QueueItem {
     Frame(Vec<u8>),
@@ -13,19 +15,25 @@ enum QueueItem {
 }
 
 pub struct SendQueue {
-    high_water_mark: usize,
+    opt: SockOpt,
 
     message_count: usize,
     frames: VecDeque<QueueItem>,
+
+    sent: HashMap<u64, Vec<u8>>,
+    exp: VecDeque<(u64, Instant, usize)>,
 }
 
 impl SendQueue {
-    pub fn new(high_water_mark: usize) -> Self {
+    pub fn new(opt: SockOpt) -> Self {
         Self {
-            high_water_mark,
+            opt,
 
             message_count: 0,
             frames: VecDeque::new(),
+
+            sent: HashMap::new(),
+            exp: VecDeque::new(),
         }
     }
 
@@ -41,7 +49,7 @@ impl SendQueue {
     }
 
     pub fn push(&mut self, data: &[&[u8]], nonce: u64) -> Result<(), Box<dyn Error>> {
-        if self.message_count >= self.high_water_mark {
+        if self.message_count >= self.opt.send_hwm {
             return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
         }
 
@@ -101,5 +109,54 @@ impl SendQueue {
                 }
             }
         }
+    }
+
+    pub fn pull_safe(&mut self) -> Option<Vec<u8>> {
+        let now = Instant::now();
+
+        while self.exp.len() > 0
+            && now.duration_since(self.exp[0].1).as_secs_f64() > self.opt.safe_resend_ivl
+        {
+            if let Some((hash, .., send_ct)) = self.exp.pop_front() {
+                if send_ct > self.opt.safe_resend_limit {
+                    continue;
+                }
+
+                if let Some(frame) = self.sent.get(&hash) {
+                    self.exp.push_back((hash, now, send_ct + 1));
+                    return Some(frame.clone());
+                }
+            } else {
+                break;
+            }
+        }
+
+        loop {
+            let Some(m) = self.frames.pop_front() else {
+                return None;
+            };
+
+            match m {
+                QueueItem::Frame(f) => {
+                    let mut hasher = Fnv1a64::new();
+                    hasher.write(&f);
+                    let hash = hasher.finish();
+
+                    self.sent.insert(hash, f.clone());
+
+                    self.exp.push_back((hash, Instant::now(), 1));
+
+                    return Some(f);
+                }
+                QueueItem::Marker => {
+                    self.message_count -= 1;
+                    return None;
+                }
+            }
+        }
+    }
+
+    pub fn confirm_safe(&mut self, hash: u64) {
+        self.sent.remove(&hash);
     }
 }
