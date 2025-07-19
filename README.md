@@ -12,7 +12,8 @@ follow. No background threads, no hidden state, no bullshit.
 
 ### Dependency Posture
 
-Don't like them, don't want them. Everything for NBMQ will be implemented fresh in Rust. I end up building for edge compute systems a lot of the time, 
+No dependencies, or at least as few as possible. Absolutely NO externally linked C libraries. 
+Everything for NBMQ will be implemented fresh in Rust. I end up building for edge compute systems a lot of the time, 
 and want the footprint of this library to be as small as possible.
 
 ### Network Protocol Versatility
