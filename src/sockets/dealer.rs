@@ -61,8 +61,15 @@ impl AsSocket for Dealer {
 
         let peer = self.select_fair_queue_peer()?.clone();
 
+        let mut err: Option<Box<dyn Error>> = None;
         while let Some(frame) = self.send_queue.pull() {
-            self.core.send_peer(&frame, &peer)?;
+            if let Err(e) = self.core.send_peer(&frame, &peer) {
+                err = Some(e);
+            }
+        }
+
+        if let Some(err) = err {
+            return Err(err);
         }
 
         Ok(())
@@ -70,6 +77,10 @@ impl AsSocket for Dealer {
 
     fn recv_multipart(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
         loop {
+            if let Some((message, ..)) = self.recv_queue.pull() {
+                return Ok(message);
+            }
+
             let (frame, .., control) = self.core.recv()?;
 
             if let Some(_) = control {
@@ -77,10 +88,6 @@ impl AsSocket for Dealer {
             }
 
             self.recv_queue.push(&frame)?;
-
-            if let Some(message) = self.recv_queue.pull() {
-                return Ok(message);
-            }
         }
     }
 
@@ -94,5 +101,13 @@ impl AsSocket for Dealer {
 
     fn opt(&mut self) -> &mut SockOpt {
         return &mut self.opt;
+    }
+
+    fn peek_send_queue(&mut self) -> &mut SendQueue {
+        &mut self.send_queue
+    }
+
+    fn peek_recv_queue(&mut self) -> &mut RecvQueue {
+        &mut self.recv_queue
     }
 }

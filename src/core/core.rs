@@ -15,7 +15,13 @@ pub enum SockMode {
     Connect(SocketAddr),
 }
 
+pub enum PeerState {
+    Connected,
+    Disconnected,
+}
+
 pub struct Peer {
+    pub state: PeerState,
     pub last_seen: Instant,
     pub last_sent: Instant,
 }
@@ -23,6 +29,7 @@ pub struct Peer {
 impl Peer {
     pub fn new() -> Self {
         Self {
+            state: PeerState::Connected,
             last_seen: Instant::now(),
             last_sent: Instant::now(),
         }
@@ -40,8 +47,10 @@ pub struct Core {
 
 impl Core {
     pub fn bind(addr: &str, opt: SockOpt) -> Result<Core, Box<dyn Error>> {
-        let socket = UdpSocket::bind(addr)?;
+        let mut socket = UdpSocket::bind(addr)?;
         socket.set_nonblocking(true)?;
+
+        Core::drain_socket(&mut socket);
 
         Ok(Core {
             sock: socket,
@@ -74,7 +83,35 @@ impl Core {
         })
     }
 
+    fn drain_socket(sock: &mut UdpSocket) {
+        let mut buf = [0u8; 2048];
+        loop {
+            if let Err(_) = sock.recv_from(&mut buf) {
+                return;
+            }
+        }
+    }
+
+    fn reconnect(&mut self) -> Result<(), Box<dyn Error>> {
+        match self.mode {
+            SockMode::Connect(peer_addr) => {
+                if let Some(peer) = self.peers.get_mut(&peer_addr) {
+                    if let PeerState::Disconnected = peer.state {
+                        self.sock.connect(peer_addr)?;
+                        peer.state = PeerState::Connected;
+                        self.send_all(&ControlFrame::Heartbeat(vec![]).encode())?;
+                    }
+                }
+            }
+            _ => (),
+        }
+
+        return Ok(());
+    }
+
     fn recv_frame(&mut self) -> Result<(Vec<u8>, SocketAddr), Box<dyn Error>> {
+        self.reconnect()?;
+
         let mut buffer = vec![0u8; consts::MAX_FRAME_SIZE];
 
         let recv_addr = match self.mode {
@@ -127,22 +164,23 @@ impl Core {
     }
 
     pub fn recv(&mut self) -> Result<(Vec<u8>, SocketAddr, Option<ControlFrame>), Box<dyn Error>> {
-        loop {
-            let (frame, peer_addr) = self.recv_frame()?;
-            let control = self.handle_control(&frame, &peer_addr);
-            return Ok((frame, peer_addr, control));
-        }
+        let (frame, peer_addr) = self.recv_frame()?;
+        let control = self.handle_control(&frame, &peer_addr);
+        return Ok((frame, peer_addr, control));
     }
 
     pub fn send_all(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
         match self.mode {
             SockMode::Connect(peer_addr) => {
-                self.sock.send(data)?;
-
                 let peer = self.peers.entry(peer_addr).or_insert_with(|| {
                     self.peer_update = true;
                     Peer::new()
                 });
+
+                if let Err(e) = self.sock.send(data) {
+                    peer.state = PeerState::Disconnected;
+                    return Err(Box::new(e));
+                }
 
                 peer.last_sent = Instant::now();
             }
@@ -150,7 +188,11 @@ impl Core {
                 let mut drop_stale_peers = vec![];
 
                 for (peer_addr, peer) in self.peers.iter_mut() {
-                    self.sock.send_to(data, peer_addr)?;
+                    if let Err(e) = self.sock.send_to(data, peer_addr) {
+                        peer.state = PeerState::Disconnected;
+                        return Err(Box::new(e));
+                    }
+
                     peer.last_sent = Instant::now();
 
                     if Instant::now().duration_since(peer.last_seen).as_secs_f64()
@@ -171,13 +213,18 @@ impl Core {
     }
 
     pub fn send_peer(&mut self, data: &[u8], peer_addr: &SocketAddr) -> Result<(), Box<dyn Error>> {
+        self.reconnect()?;
+        let mut peer_error: Option<Box<dyn Error>> = None;
+
         let peer_addr = match self.mode {
             SockMode::Connect(peer_addr) => {
                 self.send_all(data)?;
                 peer_addr.clone()
             }
             SockMode::Bind => {
-                self.sock.send_to(data, peer_addr)?;
+                if let Err(e) = self.sock.send_to(data, peer_addr) {
+                    peer_error = Some(Box::new(e));
+                }
                 peer_addr.clone()
             }
         };
@@ -186,6 +233,11 @@ impl Core {
             self.peer_update = true;
             Peer::new()
         });
+
+        if let Some(e) = peer_error {
+            peer.state = PeerState::Disconnected;
+            return Err(e);
+        }
 
         peer.last_sent = Instant::now();
 

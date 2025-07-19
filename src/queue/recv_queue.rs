@@ -107,7 +107,8 @@ pub struct RecvQueue {
     pub opt: SockOpt,
 
     pub incoming: HashMap<u64, IncomingMessage>,
-    pub complete: VecDeque<Vec<Vec<u8>>>,
+    pub complete: HashMap<u64, Vec<Vec<u8>>>,
+    pub complete_deque: VecDeque<u64>,
 
     pub last_maint: Instant,
 }
@@ -118,7 +119,8 @@ impl RecvQueue {
             opt,
 
             incoming: HashMap::new(),
-            complete: VecDeque::new(),
+            complete: HashMap::new(),
+            complete_deque: VecDeque::new(),
 
             last_maint: Instant::now(),
         }
@@ -166,7 +168,11 @@ impl RecvQueue {
                         .into_iter()
                         .filter_map(|x| Some(x?.data))
                         .collect::<Vec<Vec<u8>>>();
-                    self.complete.push_back(reassembly);
+
+                    self.complete.entry(frame.message_hash).or_insert_with(|| {
+                        self.complete_deque.push_back(frame.message_hash);
+                        reassembly
+                    });
                 } else {
                     return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
                 }
@@ -176,8 +182,17 @@ impl RecvQueue {
         Ok(())
     }
 
-    pub fn pull(&mut self) -> Option<Vec<Vec<u8>>> {
+    pub fn pull(&mut self) -> Option<(Vec<Vec<u8>>, u64)> {
         self.maint();
-        self.complete.pop_front()
+
+        loop {
+            let Some(hash) = self.complete_deque.pop_front() else {
+                return None;
+            };
+
+            if let Some(message) = self.complete.remove(&hash) {
+                return Some((message, hash));
+            }
+        }
     }
 }

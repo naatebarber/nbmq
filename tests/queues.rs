@@ -32,7 +32,7 @@ pub fn send_queue_to_recv_queue() {
         rq.push(f.as_slice()).unwrap();
     }
 
-    let _a = rq.pull().unwrap();
+    let (_a, _a_hash) = rq.pull().unwrap();
 
     assert!(_a == a);
 }
