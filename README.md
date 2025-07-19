@@ -25,14 +25,15 @@ gradient between the speed/danger of UDP and safety/overhead of TCP. I want the 
 between safety/speed for their sockets. UDP allows for opinionated transport paradigms to be added or peeled away at a whim.
 
 #### Alpha Tasklist
-    - Allow messaging level socket option config
+    - [x] Allow messaging level socket option config
+    - [x] Dealer socket handles duplex, simplex. 
+    - [x] Add opt-in delivery guarantees upon the fire-and-forget UDP base
+    - Add pub/sub and routing specific sockets.
     - Add a `socket.debug()` method to sockets, that warns the user when their invoke rate is less than a telemetry constant.
-    - Dealer socket handles duplex, simplex. Add pub/sub and routing specific sockets.
     - Benchmark compared to zmq.
     - DOCS
         - Write an RFC for my transport layer frame protocol
         - Write Rust usage examples for each communication style
     - Make sockets explicitly threadsafe, they already are, but need the traits
-    - Add opt-in delivery guarantees upon the fire-and-forget UDP base
     - Add transparency methods, `socket.info()` for peer info, connection statistics
 
