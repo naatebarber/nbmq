@@ -24,6 +24,88 @@ I chose UDP initially because it serves as a completely unbiased base transport 
 gradient between the speed/danger of UDP and safety/overhead of TCP. I want the user to be able to configure, with granularity, the exact tradeoff 
 between safety/speed for their sockets. UDP allows for opinionated transport paradigms to be added or peeled away at a whim.
 
+## Usage
+
+#### Socket Types
+- `Dealer`: Fire and forget duplex socket. When a Dealer server has multiple peers, messages sent out are fair-queued.
+- `SafeDealer`: Same as Dealer socket, but frames are acknowledged by the receiver, and resent by the sender if not responded to.
+The safety levels, including resend-wait, and resend count are configurable through socket options.
+- `Radio`: Fire and forget, send-only, socket. Messages sent out from Radio are queued to all peers at once.
+- `Dish`: Peer socket to Radio, receive only.
+
+#### Duplex Communication
+
+To create a duplex communication regime, we call `.send_multipart()` and `.recv_multipart()` on both sides.
+Control frames are silently exchanged when these methods are called, keeping telemetry current.
+
+```rust
+use nbmq::{Socket, Dealer, AsSocket};
+
+// Thread Event Loop 1
+let mut server = Socket::<Dealer>::new().bind("0.0.0.0:8000")?;
+loop {
+    let some_data = ["hello".as_bytes()];
+
+    server.send_multipart(&some_data)?;
+
+    while let Ok(data) = server.recv_multipart() {
+        // ...
+    }
+}
+
+// Thread Event Loop 2
+let mut client = Socket::<Dealer>::new().connect("127.0.0.1:8000")?;
+loop {
+    let some_data = ["world".as_bytes()];
+
+    client.send_multipart(&some_data)?;
+
+    while let Ok(data) = client.recv_multipart() {
+        // ..
+    }
+}
+```
+
+#### Simplex Communication
+
+In situations where one side of a socket pair does all the sending, and the other side
+does all the receiving, we have to call `.drain_control()` on the sending socket. This
+allows for ambient control frames to flow between both sides, keeping system
+telemetry up to date without timers or background threads.
+
+```rust
+use nbmq::{Socket, Radio, Dish, AsSocket};
+
+// Thread Event Loop 1
+let mut server = Socket::<Radio>::new().bind("0.0.0.0:8000")?;
+loop {
+    let some_data = ["hello".as_bytes()];
+
+    server.send_multipart(&some_data)?;
+    
+    // Since NBMQ is timerless, in order to maintain socket telemetry
+    // we manually drain socket control frames when recv_multipart() is not used.
+    server.drain_control()?;
+}
+
+// Thread Event Loop 2
+let mut client = Socket::<Dish>::new().connect("127.0.0.1:8000")?;
+loop {
+    while let Ok(data) = client.recv_multipart() {
+        // ..
+    }
+}
+
+// Thread Event Loop N
+let mut client = Socket::<Dish>::new().connect("127.0.0.1:8000")?;
+loop {
+    while let Ok(data) = client.recv_multipart() {
+        // ..
+    }
+}
+```
+
+
 #### Alpha Tasklist
     - [x] Allow messaging level socket option config
     - [x] Dealer socket handles duplex, simplex. 
