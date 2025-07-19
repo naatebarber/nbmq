@@ -1,4 +1,9 @@
-use std::{error::Error, hash::Hasher, net::SocketAddr};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    hash::Hasher,
+    net::SocketAddr,
+};
 
 use crate::{
     core::{AsSocket, Core, SockOpt},
@@ -13,8 +18,9 @@ pub struct SafeDealer {
 
     unique: u64,
     peers: Vec<SocketAddr>,
+    peer_set: HashSet<SocketAddr>,
 
-    send_queue: SendQueue,
+    send_queues: HashMap<SocketAddr, SendQueue>,
     recv_queue: RecvQueue,
 }
 
@@ -26,8 +32,9 @@ impl SafeDealer {
 
             unique: 0,
             peers: vec![],
+            peer_set: HashSet::new(),
 
-            send_queue: SendQueue::new(opt.clone()),
+            send_queues: HashMap::new(),
             recv_queue: RecvQueue::new(opt),
         }
     }
@@ -40,6 +47,16 @@ impl SafeDealer {
         }
 
         return Ok(&self.peers[self.unique as usize % peer_ct]);
+    }
+
+    fn check_peer_update(&mut self) {
+        if let Some(peer_update) = self.core.update_peers() {
+            self.peers = peer_update;
+            self.peer_set = HashSet::new();
+            self.peer_set.extend(self.peers.iter());
+
+            self.send_queues.retain(|k, _| self.peer_set.contains(k));
+        }
     }
 }
 
@@ -55,16 +72,19 @@ impl AsSocket for SafeDealer {
     }
 
     fn send_multipart(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
-        self.send_queue.push(data, self.unique)?;
-        self.unique = self.unique.wrapping_add(1);
-        if let Some(peer_update) = self.core.update_peers() {
-            self.peers = peer_update;
-        }
+        self.check_peer_update();
 
         let peer = self.select_fair_queue_peer()?.clone();
+        let send_queue = self
+            .send_queues
+            .entry(peer)
+            .or_insert(SendQueue::new(self.opt.clone()));
+
+        send_queue.push(data, self.unique)?;
+        self.unique = self.unique.wrapping_add(1);
 
         let mut err: Option<Box<dyn Error>> = None;
-        while let Some(frame) = self.send_queue.pull_safe() {
+        while let Some(frame) = send_queue.pull_safe() {
             if let Err(e) = self.core.send_peer(&frame, &peer) {
                 err = Some(e);
             }
@@ -84,6 +104,7 @@ impl AsSocket for SafeDealer {
             }
 
             let (frame, peer_addr, control) = self.core.recv()?;
+            self.check_peer_update();
 
             if let Some(control) = control {
                 match control {
@@ -96,7 +117,11 @@ impl AsSocket for SafeDealer {
                         hash_b[0..8].copy_from_slice(&chunk[0..8]);
                         let hash = u64::from_be_bytes(hash_b);
 
-                        self.send_queue.confirm_safe(hash);
+                        let send_queue = self
+                            .send_queues
+                            .entry(peer_addr)
+                            .or_insert(SendQueue::new(self.opt.clone()));
+                        send_queue.confirm_safe(hash);
                     }
                     _ => (),
                 };
@@ -115,14 +140,6 @@ impl AsSocket for SafeDealer {
 
             self.recv_queue.push(&frame)?;
         }
-    }
-
-    fn drain_control(&mut self) -> Result<(), Box<dyn Error>> {
-        while let Ok(_) = self.recv_multipart() {
-            continue;
-        }
-
-        Ok(())
     }
 
     fn opt(&mut self) -> &mut SockOpt {

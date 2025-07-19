@@ -55,3 +55,51 @@ fn safe_socket_resends_until_success() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+#[test]
+pub fn safe_socket_resends_to_correct_peers() -> Result<(), Box<dyn Error>> {
+    let mut server = Socket::<SafeDealer>::new()
+        .set_safe_resend_ivl(0.01)
+        .set_safe_resent_limit(20)
+        .bind("0.0.0.0:4010")?;
+
+    let mut client = Socket::<SafeDealer>::new().connect("127.0.0.1:4010")?;
+
+    sleep(0.01);
+
+    server.drain_control()?;
+    server.send_multipart(&["to client 1".as_bytes()])?;
+    println!("1. sent to client 1");
+
+    sleep(0.01);
+
+    let mut client_2 = Socket::<SafeDealer>::new().connect("127.0.0.1:4010")?;
+
+    sleep(0.01);
+
+    server.drain_control()?;
+    server.send_multipart(&["to client 2".as_bytes()])?;
+    println!("2. sent to client 2");
+
+    sleep(0.02);
+
+    server.send_multipart(&["to client 1".as_bytes()])?;
+
+    sleep(0.02);
+
+    server.send_multipart(&["to client 2".as_bytes()])?;
+
+    sleep(0.01);
+
+    let mut ct = 0;
+    while let Ok(_) = client.recv_multipart() {
+        ct += 1;
+    }
+    while let Ok(_) = client_2.recv_multipart() {
+        ct += 1;
+    }
+
+    assert!(ct == 4);
+
+    Ok(())
+}

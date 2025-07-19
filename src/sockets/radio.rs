@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, io};
 
 use crate::{
     core::{AsSocket, Core, SockOpt},
@@ -63,8 +63,19 @@ impl AsSocket for Radio {
     }
 
     fn drain_control(&mut self) -> Result<(), Box<dyn Error>> {
-        while let Ok(_) = self.core.recv() {
-            continue;
+        loop {
+            match self.core.recv() {
+                Ok(_) => continue,
+                Err(e) => {
+                    if let Some(io_err) = e.downcast_ref::<io::Error>() {
+                        if io_err.kind() == io::ErrorKind::WouldBlock {
+                            break;
+                        }
+                    }
+
+                    return Err(e);
+                }
+            }
         }
 
         Ok(())

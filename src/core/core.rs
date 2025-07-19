@@ -153,20 +153,12 @@ impl Core {
         Ok((buffer, recv_addr))
     }
 
-    fn handle_control(&mut self, data: &[u8], peer_addr: &SocketAddr) -> Option<ControlFrame> {
+    fn handle_control(&mut self, data: &[u8], _peer_addr: &SocketAddr) -> Option<ControlFrame> {
         let Ok(Some(control_frame)) = ControlFrame::parse(&data) else {
             return None;
         };
 
         match control_frame {
-            ControlFrame::Heartbeat(_) => {
-                let peer = self.peers.entry(peer_addr.clone()).or_insert_with(|| {
-                    self.peer_update = true;
-                    Peer::new()
-                });
-
-                peer.last_seen = Instant::now();
-            }
             _ => (),
         }
 

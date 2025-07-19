@@ -54,14 +54,6 @@ impl AsSocket for Dish {
         }
     }
 
-    fn drain_control(&mut self) -> Result<(), Box<dyn Error>> {
-        while let Ok(_) = self.core.recv() {
-            continue;
-        }
-
-        Ok(())
-    }
-
     fn opt(&mut self) -> &mut SockOpt {
         return &mut self.opt;
     }

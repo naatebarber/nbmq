@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, io};
 
 use super::sock_opt::SockOpt;
 
@@ -15,7 +15,24 @@ pub trait AsSocket {
     /// Receive a multipart message
     fn recv_multipart(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>>;
     /// Receive control frames only on the socket, discarding all user data frames
-    fn drain_control(&mut self) -> Result<(), Box<dyn Error>>;
+    fn drain_control(&mut self) -> Result<(), Box<dyn Error>> {
+        loop {
+            match self.recv_multipart() {
+                Ok(_) => continue,
+                Err(e) => {
+                    if let Some(io_err) = e.downcast_ref::<io::Error>() {
+                        if io_err.kind() == io::ErrorKind::WouldBlock {
+                            break;
+                        }
+                    }
+
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(())
+    }
 
     /// Get a mutable set of socket options
     fn opt(&mut self) -> &mut SockOpt;

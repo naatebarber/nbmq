@@ -156,3 +156,16 @@ pub fn long_message() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+#[test]
+fn sockets_register_as_peers_on_connect() -> Result<(), Box<dyn Error>> {
+    let mut server = Socket::<Dealer>::new().bind("0.0.0.0:2005")?;
+    Socket::<Dealer>::new().connect("127.0.0.1:2005")?;
+    Socket::<Dealer>::new().connect("127.0.0.1:2005")?;
+
+    server.drain_control()?;
+
+    assert!(server.peers() == 2);
+
+    Ok(())
+}

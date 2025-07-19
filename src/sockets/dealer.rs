@@ -39,6 +39,12 @@ impl Dealer {
 
         return Ok(&self.peers[self.unique as usize % peer_ct]);
     }
+
+    fn check_peer_update(&mut self) {
+        if let Some(peer_update) = self.core.update_peers() {
+            self.peers = peer_update;
+        }
+    }
 }
 
 impl AsSocket for Dealer {
@@ -53,11 +59,10 @@ impl AsSocket for Dealer {
     }
 
     fn send_multipart(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
+        self.check_peer_update();
+
         self.send_queue.push(data, self.unique)?;
         self.unique = self.unique.wrapping_add(1);
-        if let Some(peer_update) = self.core.update_peers() {
-            self.peers = peer_update;
-        }
 
         let peer = self.select_fair_queue_peer()?.clone();
 
@@ -82,6 +87,7 @@ impl AsSocket for Dealer {
             }
 
             let (frame, .., control) = self.core.recv()?;
+            self.check_peer_update();
 
             if let Some(_) = control {
                 continue;
@@ -89,14 +95,6 @@ impl AsSocket for Dealer {
 
             self.recv_queue.push(&frame)?;
         }
-    }
-
-    fn drain_control(&mut self) -> Result<(), Box<dyn Error>> {
-        while let Ok(_) = self.core.recv() {
-            continue;
-        }
-
-        Ok(())
     }
 
     fn opt(&mut self) -> &mut SockOpt {
