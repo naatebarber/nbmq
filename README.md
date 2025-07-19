@@ -105,18 +105,3 @@ loop {
     }
 }
 ```
-
-
-#### Alpha Tasklist
-    - [x] Allow messaging level socket option config
-    - [x] Dealer socket handles duplex, simplex. 
-    - [x] Add opt-in delivery guarantees upon the fire-and-forget UDP base
-    - [x] Add radio/dish sockets.
-    - Add a `socket.debug()` method to sockets, that warns the user when their invoke rate is less than a telemetry constant.
-    - Benchmark compared to zmq.
-    - DOCS
-        - Write an RFC for my transport layer frame protocol
-        - Write Rust usage examples for each communication style
-    - Make sockets explicitly threadsafe, they already are, but need the traits
-    - Add transparency methods, `socket.info()` for peer info, connection statistics
-
