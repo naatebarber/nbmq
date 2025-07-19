@@ -27,4 +27,7 @@ pub trait AsSocket {
 
     /// Get a mutable reference to the internal recv queue
     fn peek_recv_queue(&mut self) -> &mut RecvQueue;
+
+    /// Get the current number of connected peers
+    fn peers(&self) -> usize;
 }

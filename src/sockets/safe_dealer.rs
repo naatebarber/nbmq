@@ -162,4 +162,8 @@ impl AsSocket for SafeDealer {
     fn peek_recv_queue(&mut self) -> &mut RecvQueue {
         &mut self.recv_queue
     }
+
+    fn peers(&self) -> usize {
+        self.peers.len()
+    }
 }

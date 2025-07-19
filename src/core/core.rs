@@ -63,13 +63,13 @@ impl Core {
     }
 
     pub fn connect(addr: &str, opt: SockOpt) -> Result<Core, Box<dyn Error>> {
-        let sock = UdpSocket::bind("127.0.0.1:0")?;
+        let mut sock = UdpSocket::bind("127.0.0.1:0")?;
         sock.set_nonblocking(true)?;
-
-        sock.connect(addr)?;
 
         let peer = Peer::new();
         let peer_addr = SocketAddr::from_str(addr)?;
+        Core::connect_socket(&mut sock, &peer_addr)?;
+
         let mut peers = HashMap::new();
         peers.insert(peer_addr.clone(), peer);
 
@@ -92,14 +92,20 @@ impl Core {
         }
     }
 
+    fn connect_socket(sock: &mut UdpSocket, peer_addr: &SocketAddr) -> Result<(), Box<dyn Error>> {
+        sock.connect(peer_addr)?;
+        sock.send(&ControlFrame::Heartbeat(vec![]).encode())?;
+
+        Ok(())
+    }
+
     fn reconnect(&mut self) -> Result<(), Box<dyn Error>> {
         match self.mode {
             SockMode::Connect(peer_addr) => {
                 if let Some(peer) = self.peers.get_mut(&peer_addr) {
                     if let PeerState::Disconnected = peer.state {
-                        self.sock.connect(peer_addr)?;
+                        Core::connect_socket(&mut self.sock, &peer_addr)?;
                         peer.state = PeerState::Connected;
-                        self.send_all(&ControlFrame::Heartbeat(vec![]).encode())?;
                     }
                 }
             }
@@ -133,6 +139,10 @@ impl Core {
         });
 
         peer.last_seen = Instant::now();
+
+        if let PeerState::Disconnected = peer.state {
+            peer.state = PeerState::Connected;
+        }
 
         if peer.last_seen.duration_since(peer.last_sent).as_secs_f64() > self.opt.peer_heartbeat_ivl
         {
@@ -188,9 +198,12 @@ impl Core {
                 let mut drop_stale_peers = vec![];
 
                 for (peer_addr, peer) in self.peers.iter_mut() {
-                    if let Err(e) = self.sock.send_to(data, peer_addr) {
+                    if let PeerState::Disconnected = peer.state {
+                        continue;
+                    }
+
+                    if let Err(_) = self.sock.send_to(data, peer_addr) {
                         peer.state = PeerState::Disconnected;
-                        return Err(Box::new(e));
                     }
 
                     peer.last_sent = Instant::now();
