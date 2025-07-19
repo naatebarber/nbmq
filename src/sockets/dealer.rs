@@ -103,14 +103,6 @@ impl AsSocket for Dealer {
         return &mut self.opt;
     }
 
-    fn peek_send_queue(&mut self) -> &mut SendQueue {
-        &mut self.send_queue
-    }
-
-    fn peek_recv_queue(&mut self) -> &mut RecvQueue {
-        &mut self.recv_queue
-    }
-
     fn peers(&self) -> usize {
         self.peers.len()
     }

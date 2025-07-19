@@ -1,7 +1,5 @@
 use std::error::Error;
 
-use crate::queue::{RecvQueue, SendQueue};
-
 use super::sock_opt::SockOpt;
 
 pub trait AsSocket {
@@ -21,12 +19,6 @@ pub trait AsSocket {
 
     /// Get a mutable set of socket options
     fn opt(&mut self) -> &mut SockOpt;
-
-    /// Get a mutable reference to the internal send queue
-    fn peek_send_queue(&mut self) -> &mut SendQueue;
-
-    /// Get a mutable reference to the internal recv queue
-    fn peek_recv_queue(&mut self) -> &mut RecvQueue;
 
     /// Get the current number of connected peers
     fn peers(&self) -> usize;

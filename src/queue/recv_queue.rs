@@ -111,6 +111,9 @@ pub struct RecvQueue {
     pub complete_deque: VecDeque<u64>,
 
     pub last_maint: Instant,
+
+    dedup: HashSet<u64>,
+    dedup_deque: VecDeque<(u64, Instant)>,
 }
 
 impl RecvQueue {
@@ -123,6 +126,9 @@ impl RecvQueue {
             complete_deque: VecDeque::new(),
 
             last_maint: Instant::now(),
+
+            dedup: HashSet::new(),
+            dedup_deque: VecDeque::new(),
         }
     }
 
@@ -194,5 +200,29 @@ impl RecvQueue {
                 return Some((message, hash));
             }
         }
+    }
+
+    pub fn pull_safe(&mut self) -> Option<(Vec<Vec<u8>>, u64)> {
+        let Some((message, hash)) = self.pull() else {
+            return None;
+        };
+
+        let now = Instant::now();
+
+        while self.dedup_deque.len() > 0
+            && self.dedup_deque[0].1.duration_since(now).as_secs_f64()
+                > self.opt.safe_hash_dedup_ttl
+        {
+            let Some((hash, ..)) = self.dedup_deque.pop_front() else {
+                break;
+            };
+            self.dedup.remove(&hash);
+        }
+
+        if self.dedup.insert(hash) {
+            return Some((message, hash));
+        }
+
+        return None;
     }
 }

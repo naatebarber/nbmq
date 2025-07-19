@@ -2,14 +2,13 @@ use std::error::Error;
 
 use crate::{
     core::{AsSocket, Core, SockOpt},
-    queue::{RecvQueue, SendQueue},
+    queue::RecvQueue,
 };
 
 pub struct Dish {
     core: Core,
     opt: SockOpt,
 
-    send_queue: SendQueue,
     recv_queue: RecvQueue,
 }
 
@@ -19,7 +18,6 @@ impl Dish {
             core,
             opt: opt.clone(),
 
-            send_queue: SendQueue::new(opt.clone()),
             recv_queue: RecvQueue::new(opt),
         }
     }
@@ -66,14 +64,6 @@ impl AsSocket for Dish {
 
     fn opt(&mut self) -> &mut SockOpt {
         return &mut self.opt;
-    }
-
-    fn peek_send_queue(&mut self) -> &mut SendQueue {
-        &mut self.send_queue
-    }
-
-    fn peek_recv_queue(&mut self) -> &mut RecvQueue {
-        &mut self.recv_queue
     }
 
     fn peers(&self) -> usize {

@@ -41,19 +41,9 @@ fn safe_socket_resends_until_success() -> Result<(), Box<dyn Error>> {
         datas.push(data);
     }
 
-    let sq = client.peek_send_queue();
-    let n_expecting = sq.exp.len();
-    let n_resend = sq.sent.len();
-    println!("{} exp, {} resend", n_expecting, n_resend);
-
     sleep(0.02);
 
     client.drain_control()?;
-
-    let sq = client.peek_send_queue();
-    let n_expecting = sq.exp.len();
-    let n_resend = sq.sent.len();
-    println!("{} exp, {} resend", n_expecting, n_resend);
 
     println!("datas {}", datas.len());
     assert!(datas.len() == 30);
