@@ -8,10 +8,10 @@ fn sleep(n: f64) {
 
 #[test]
 fn safe_socket_resends_until_success() -> Result<(), Box<dyn Error>> {
-    let mut client = Socket::<SafeDealer>::new();
-    client.opt.safe_resend_ivl = 0.01;
-    client.opt.safe_resend_limit = 20;
-    let mut client = client.connect("127.0.0.1:4000")?;
+    let mut client = Socket::<SafeDealer>::new()
+        .set_safe_resend_ivl(0.01)
+        .set_safe_resent_limit(20)
+        .connect("127.0.0.1:4000")?;
 
     for i in 10..20 {
         let data = vec![0u8; i];
