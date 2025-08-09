@@ -1,7 +1,13 @@
-use std::{error::Error, net::SocketAddr};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    io,
+    net::SocketAddr,
+};
 
 use crate::{
     core::{AsSocket, Core, SockOpt},
+    f,
     queue::{RecvQueue, SendQueue},
 };
 
@@ -11,8 +17,9 @@ pub struct Dealer {
 
     unique: u64,
     peers: Vec<SocketAddr>,
+    peer_set: HashSet<SocketAddr>,
 
-    send_queue: SendQueue,
+    send_queues: HashMap<SocketAddr, SendQueue>,
     recv_queue: RecvQueue,
 }
 
@@ -24,8 +31,9 @@ impl Dealer {
 
             unique: 0,
             peers: vec![],
+            peer_set: HashSet::new(),
 
-            send_queue: SendQueue::new(opt.clone()),
+            send_queues: HashMap::new(),
             recv_queue: RecvQueue::new(opt),
         }
     }
@@ -43,6 +51,10 @@ impl Dealer {
     fn check_peer_update(&mut self) {
         if let Some(peer_update) = self.core.update_peers() {
             self.peers = peer_update;
+            self.peer_set = HashSet::new();
+            self.peer_set.extend(self.peers.iter());
+
+            self.send_queues.retain(|k, _| self.peer_set.contains(k));
         }
     }
 }
@@ -58,43 +70,79 @@ impl AsSocket for Dealer {
         Ok(Dealer::new_from(Core::connect(addr, opt.clone())?, opt))
     }
 
-    fn send_multipart(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
+    fn send(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
         self.check_peer_update();
-
-        self.send_queue.push(data, self.unique)?;
         self.unique = self.unique.wrapping_add(1);
 
         let peer = self.select_fair_queue_peer()?.clone();
+        let send_queue = self
+            .send_queues
+            .entry(peer)
+            .or_insert(SendQueue::new(self.opt.clone()));
 
-        let mut err: Option<Box<dyn Error>> = None;
-        while let Some(frame) = self.send_queue.pull() {
-            if let Err(e) = self.core.send_peer(&frame, &peer) {
-                err = Some(e);
-            }
-        }
-
-        if let Some(err) = err {
-            return Err(err);
-        }
+        send_queue.push(data, self.unique)?;
 
         Ok(())
     }
 
-    fn recv_multipart(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
-        loop {
-            if let Some((message, ..)) = self.recv_queue.pull() {
-                return Ok(message);
-            }
-
-            let (frame, .., control) = self.core.recv()?;
-            self.check_peer_update();
-
-            if let Some(_) = control {
-                continue;
-            }
-
-            self.recv_queue.push(&frame)?;
+    fn recv(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
+        if let Some((message, ..)) = self.recv_queue.pull() {
+            return Ok(message);
         }
+
+        return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
+    }
+
+    fn tick(&mut self) -> Result<(), Box<dyn Error>> {
+        self.check_peer_update();
+
+        for _ in 0..self.opt.max_tick_recv {
+            if let Ok((frame, _, control)) = self.core.recv() {
+                if let Some(_) = &control {
+                    continue;
+                }
+
+                if let Err(_) = self.recv_queue.push(&frame) {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        let queue_sizes = self
+            .send_queues
+            .iter()
+            .map(|(p, q)| (p.clone(), q.len()))
+            .collect::<Vec<(SocketAddr, usize)>>();
+        let distribution =
+            f::softmax(&queue_sizes.iter().map(|x| x.1 as f64).collect::<Vec<f64>>());
+        let frames_per_queue = distribution
+            .iter()
+            .map(|x| f64::floor(x * self.opt.max_tick_send as f64) as usize)
+            .collect::<Vec<usize>>();
+
+        for i in 0..frames_per_queue.len() {
+            let peer = queue_sizes[i].0;
+            let limit = frames_per_queue[i];
+            let Some(send_queue) = self.send_queues.get_mut(&peer) else {
+                continue;
+            };
+
+            for _ in 0..limit {
+                let Some(frame) = send_queue.pull() else {
+                    break;
+                };
+
+                if let Err(_) = self.core.send_peer(&frame, &peer) {
+                    break;
+                }
+            }
+        }
+
+        self.check_peer_update();
+
+        Ok(())
     }
 
     fn opt(&mut self) -> &mut SockOpt {

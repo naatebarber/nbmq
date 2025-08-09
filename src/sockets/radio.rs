@@ -1,4 +1,4 @@
-use std::{error::Error, io};
+use std::error::Error;
 
 use crate::{
     core::{AsSocket, Core, SockOpt},
@@ -38,43 +38,31 @@ impl AsSocket for Radio {
         Ok(Radio::new_from(Core::connect(addr, opt.clone())?, opt))
     }
 
-    fn send_multipart(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
-        self.drain_control()?;
-
+    fn send(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
         self.send_queue.push(data, self.unique)?;
         self.unique = self.unique.wrapping_add(1);
-
-        let mut err: Option<Box<dyn Error>> = None;
-        while let Some(frame) = self.send_queue.pull() {
-            if let Err(e) = self.core.send_all(&frame) {
-                err = Some(e);
-            }
-        }
-
-        if let Some(err) = err {
-            return Err(err);
-        }
 
         Ok(())
     }
 
-    fn recv_multipart(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
+    fn recv(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
         return Err("recv_multipart not available on Radio socket".into());
     }
 
-    fn drain_control(&mut self) -> Result<(), Box<dyn Error>> {
-        loop {
-            match self.core.recv() {
-                Ok(_) => continue,
-                Err(e) => {
-                    if let Some(io_err) = e.downcast_ref::<io::Error>() {
-                        if io_err.kind() == io::ErrorKind::WouldBlock {
-                            break;
-                        }
-                    }
+    fn tick(&mut self) -> Result<(), Box<dyn Error>> {
+        for _ in 0..self.opt.max_tick_recv {
+            if let Err(_) = self.core.recv() {
+                break;
+            }
+        }
 
-                    return Err(e);
-                }
+        for _ in 0..self.opt.max_tick_send {
+            let Some(frame) = self.send_queue.pull() else {
+                break;
+            };
+
+            if let Err(_) = self.core.send_all(&frame) {
+                break;
             }
         }
 

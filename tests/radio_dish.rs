@@ -10,7 +10,7 @@ fn sleep(n: f64) {
 fn radio_errors_on_recv() -> Result<(), Box<dyn Error>> {
     let mut radio = Socket::<Radio>::new().bind("0.0.0.0:1010")?;
 
-    assert!(radio.recv_multipart().is_err() == true);
+    assert!(radio.recv().is_err() == true);
 
     Ok(())
 }
@@ -19,7 +19,7 @@ fn radio_errors_on_recv() -> Result<(), Box<dyn Error>> {
 fn dish_errors_on_send() -> Result<(), Box<dyn Error>> {
     let mut dish = Socket::<Dish>::new().bind("0.0.0.0:1020")?;
 
-    assert!(dish.send_multipart(&["test".as_bytes()]).is_err() == true);
+    assert!(dish.send(&["test".as_bytes()]).is_err() == true);
 
     Ok(())
 }
@@ -31,17 +31,19 @@ fn radio_sends_to_multiple_dish() -> Result<(), Box<dyn Error>> {
     let mut dish_2 = Socket::<Dish>::new().connect("127.0.0.1:1030")?;
     let mut dish_3 = Socket::<Dish>::new().connect("127.0.0.1:1030")?;
 
-    sleep(0.01);
-
-    radio.send_multipart(&["broadcast".as_bytes()])?;
-
-    sleep(0.01);
-
     let dishes = [&mut dish_1, &mut dish_2, &mut dish_3];
 
+    sleep(0.01);
+    radio.send(&["broadcast".as_bytes()])?;
+    radio.tick()?;
+
+    sleep(0.01);
+
     for dish in dishes {
+        dish.tick()?;
+
         let mut datas = vec![];
-        while let Ok(data) = dish.recv_multipart() {
+        while let Ok(data) = dish.recv() {
             datas.push(data);
         }
 
@@ -77,7 +79,8 @@ fn radio_maints_dish_on_disconnect() -> Result<(), Box<dyn Error>> {
 
     // Send multipart from radio. This will internally drain control state, absorbing the connect
     // heartbeats from the connected dishes.
-    radio.send_multipart(&["broadcast".as_bytes()])?;
+    radio.send(&["broadcast".as_bytes()])?;
+    radio.tick()?;
 
     // At this point we should have two peers
     println!("RADIO PEERS: {}", radio.peers());
@@ -89,7 +92,8 @@ fn radio_maints_dish_on_disconnect() -> Result<(), Box<dyn Error>> {
     // We drop the second dish. We could achieve the same result by doing literally nothing with
     // the second dish, but I want to be verbose here.
     sleep(0.02);
-    dish_1.recv_multipart()?;
+    dish_1.tick()?;
+    dish_1.recv()?;
     drop(dish_2);
 
     // We let some more time elapse
@@ -103,11 +107,13 @@ fn radio_maints_dish_on_disconnect() -> Result<(), Box<dyn Error>> {
     //
     // This logic is handled internally by Core, but radio/dish is the primary candidate where it
     // is needed.
-    radio.send_multipart(&["broadcast_2".as_bytes()])?;
-    radio.send_multipart(&["broadcast_3".as_bytes()])?;
+    radio.send(&["broadcast_2".as_bytes()])?;
+    radio.send(&["broadcast_3".as_bytes()])?;
+    radio.tick()?;
 
     // We let some more time elapse, by now dish 2 has long since expired.
     sleep(0.01);
+    radio.tick()?;
 
     // We assert here that dish 2 has been removed
     println!("RADIO PEERS: {}", radio.peers());
@@ -115,7 +121,9 @@ fn radio_maints_dish_on_disconnect() -> Result<(), Box<dyn Error>> {
 
     // For kicks we pull from dish 1 and ensure we have received all the data sent by the radio
     let mut datas = vec![];
-    while let Ok(msg) = dish_1.recv_multipart() {
+
+    dish_1.tick()?;
+    while let Ok(msg) = dish_1.recv() {
         datas.push(msg);
     }
 

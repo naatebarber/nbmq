@@ -63,7 +63,7 @@ impl Core {
     }
 
     pub fn connect(addr: &str, opt: SockOpt) -> Result<Core, Box<dyn Error>> {
-        let mut sock = UdpSocket::bind("127.0.0.1:0")?;
+        let mut sock = UdpSocket::bind("0.0.0.0:0")?;
         sock.set_nonblocking(true)?;
 
         let peer = Peer::new();

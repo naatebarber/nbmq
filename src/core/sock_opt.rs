@@ -11,6 +11,8 @@ pub struct SockOpt {
     pub queue_maint_ivl: f64,
     pub peer_keepalive: f64,
     pub peer_heartbeat_ivl: f64,
+    pub max_tick_send: usize,
+    pub max_tick_recv: usize,
 }
 
 impl Default for SockOpt {
@@ -25,6 +27,8 @@ impl Default for SockOpt {
             queue_maint_ivl: consts::QUEUE_MAINT_IVL,
             peer_keepalive: consts::PEER_KEEPALIVE,
             peer_heartbeat_ivl: consts::PEER_HEARTBEAT_IVL,
+            max_tick_send: 1000,
+            max_tick_recv: 1000,
         }
     }
 }

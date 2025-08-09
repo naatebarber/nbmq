@@ -15,35 +15,37 @@ fn safe_socket_resends_until_success() -> Result<(), Box<dyn Error>> {
 
     for i in 10..20 {
         let data = vec![0u8; i];
-        let _ = client.send_multipart(&[data.as_slice()]);
+        let _ = client.send(&[data.as_slice()]);
     }
 
     let mut server = Socket::<SafeDealer>::new().bind("0.0.0.0:4000")?;
 
     sleep(0.02);
+    client.tick()?;
 
     for i in 20..30 {
         let data = vec![0u8; i];
-        let _ = client.send_multipart(&[data.as_slice()]);
+        let _ = client.send(&[data.as_slice()]);
     }
 
     sleep(0.02);
+    client.tick()?;
 
     for i in 30..40 {
         let data = vec![0u8; i];
-        let _ = client.send_multipart(&[data.as_slice()]);
+        let _ = client.send(&[data.as_slice()]);
     }
 
     sleep(0.02);
+    server.tick()?;
 
     let mut datas = vec![];
-    while let Ok(data) = server.recv_multipart() {
+    while let Ok(data) = server.recv() {
         datas.push(data);
     }
 
     sleep(0.02);
-
-    client.drain_control()?;
+    client.tick()?;
 
     println!("datas {}", datas.len());
     assert!(datas.len() == 30);
@@ -66,36 +68,34 @@ pub fn safe_socket_resends_to_correct_peers() -> Result<(), Box<dyn Error>> {
     let mut client = Socket::<SafeDealer>::new().connect("127.0.0.1:4010")?;
 
     sleep(0.01);
-
-    server.drain_control()?;
-    server.send_multipart(&["to client 1".as_bytes()])?;
+    server.tick()?;
+    server.send(&["to client 1".as_bytes()])?;
     println!("1. sent to client 1");
 
     sleep(0.01);
-
     let mut client_2 = Socket::<SafeDealer>::new().connect("127.0.0.1:4010")?;
 
     sleep(0.01);
-
-    server.drain_control()?;
-    server.send_multipart(&["to client 2".as_bytes()])?;
+    server.tick()?;
+    server.send(&["to client 2".as_bytes()])?;
     println!("2. sent to client 2");
 
     sleep(0.02);
-
-    server.send_multipart(&["to client 1".as_bytes()])?;
+    server.tick()?;
+    server.send(&["to client 1".as_bytes()])?;
 
     sleep(0.02);
-
-    server.send_multipart(&["to client 2".as_bytes()])?;
+    server.tick()?;
+    server.send(&["to client 2".as_bytes()])?;
 
     sleep(0.01);
-
+    client.tick()?;
+    client_2.tick()?;
     let mut ct = 0;
-    while let Ok(_) = client.recv_multipart() {
+    while let Ok(_) = client.recv() {
         ct += 1;
     }
-    while let Ok(_) = client_2.recv_multipart() {
+    while let Ok(_) = client_2.recv() {
         ct += 1;
     }
 

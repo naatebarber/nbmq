@@ -2,11 +2,13 @@ use std::{
     collections::{HashMap, HashSet},
     error::Error,
     hash::Hasher,
+    io,
     net::SocketAddr,
 };
 
 use crate::{
     core::{AsSocket, Core, SockOpt},
+    f,
     frame::ControlFrame,
     queue::{RecvQueue, SendQueue},
     util::hash::Fnv1a64,
@@ -71,7 +73,7 @@ impl AsSocket for SafeDealer {
         Ok(SafeDealer::new_from(Core::connect(addr, opt.clone())?, opt))
     }
 
-    fn send_multipart(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
+    fn send(&mut self, data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
         self.check_peer_update();
 
         let peer = self.select_fair_queue_peer()?.clone();
@@ -97,14 +99,19 @@ impl AsSocket for SafeDealer {
         Ok(())
     }
 
-    fn recv_multipart(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
-        loop {
-            if let Some((message, ..)) = self.recv_queue.pull_safe() {
-                return Ok(message);
-            }
+    fn recv(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
+        if let Some((message, ..)) = self.recv_queue.pull_safe() {
+            return Ok(message);
+        }
 
-            let (frame, peer_addr, control) = self.core.recv()?;
-            self.check_peer_update();
+        return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
+    }
+
+    fn tick(&mut self) -> Result<(), Box<dyn Error>> {
+        for _ in 0..self.opt.max_tick_recv {
+            let Ok((frame, peer, control)) = self.core.recv() else {
+                break;
+            };
 
             if let Some(control) = control {
                 match control {
@@ -119,8 +126,9 @@ impl AsSocket for SafeDealer {
 
                         let send_queue = self
                             .send_queues
-                            .entry(peer_addr)
+                            .entry(peer)
                             .or_insert(SendQueue::new(self.opt.clone()));
+
                         send_queue.confirm_safe(hash);
                     }
                     _ => (),
@@ -135,11 +143,45 @@ impl AsSocket for SafeDealer {
 
             self.core.send_peer(
                 &ControlFrame::Ack(hash.to_be_bytes().to_vec()).encode(),
-                &peer_addr,
+                &peer,
             )?;
 
             self.recv_queue.push(&frame)?;
         }
+
+        let queue_sizes = self
+            .send_queues
+            .iter()
+            .map(|(p, q)| (p.clone(), q.len()))
+            .collect::<Vec<(SocketAddr, usize)>>();
+        let distribution =
+            f::softmax(&queue_sizes.iter().map(|x| x.1 as f64).collect::<Vec<f64>>());
+        let frames_per_queue = distribution
+            .iter()
+            .map(|x| f64::floor(x * self.opt.max_tick_send as f64) as usize)
+            .collect::<Vec<usize>>();
+
+        for i in 0..frames_per_queue.len() {
+            let peer = queue_sizes[i].0;
+            let limit = frames_per_queue[i];
+            let Some(send_queue) = self.send_queues.get_mut(&peer) else {
+                continue;
+            };
+
+            for _ in 0..limit {
+                let Some(frame) = send_queue.pull_safe() else {
+                    break;
+                };
+
+                if let Err(_) = self.core.send_peer(&frame, &peer) {
+                    break;
+                }
+            }
+        }
+
+        self.check_peer_update();
+
+        Ok(())
     }
 
     fn opt(&mut self) -> &mut SockOpt {

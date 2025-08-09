@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, io};
 
 use crate::{
     core::{AsSocket, Core, SockOpt},
@@ -34,24 +34,34 @@ impl AsSocket for Dish {
         Ok(Dish::new_from(Core::connect(addr, opt.clone())?, opt))
     }
 
-    fn send_multipart(&mut self, _data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
+    fn send(&mut self, _data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
         return Err("send_multipart not available on Dish".into());
     }
 
-    fn recv_multipart(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
-        loop {
-            if let Some((message, ..)) = self.recv_queue.pull() {
-                return Ok(message);
-            }
-
-            let (frame, .., control) = self.core.recv()?;
-
-            if let Some(_) = control {
-                continue;
-            }
-
-            self.recv_queue.push(&frame)?;
+    fn recv(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
+        if let Some((message, ..)) = self.recv_queue.pull() {
+            return Ok(message);
         }
+
+        return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
+    }
+
+    fn tick(&mut self) -> Result<(), Box<dyn Error>> {
+        for _ in 0..self.opt.max_tick_recv {
+            if let Ok((frame, _, control)) = self.core.recv() {
+                if let Some(_) = &control {
+                    continue;
+                }
+
+                if let Err(_) = self.recv_queue.push(&frame) {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        return Ok(());
     }
 
     fn opt(&mut self) -> &mut SockOpt {

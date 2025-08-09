@@ -48,6 +48,10 @@ impl SendQueue {
         hasher.finish()
     }
 
+    pub fn len(&self) -> usize {
+        self.frames.len() + self.sent.len()
+    }
+
     pub fn push(&mut self, data: &[&[u8]], nonce: u64) -> Result<(), Box<dyn Error>> {
         if self.message_count >= self.opt.send_hwm {
             return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));

@@ -11,12 +11,14 @@ pub fn basic_send() -> Result<(), Box<dyn Error>> {
     let mut server = Socket::<Dealer>::new().bind("0.0.0.0:2000")?;
     let mut client = Socket::<Dealer>::new().connect("127.0.0.1:2000")?;
 
+    sleep(0.01);
     let msg = "Hello World!";
-    client.send_multipart(&[msg.as_bytes()])?;
+    client.send(&[msg.as_bytes()])?;
+    client.tick()?;
 
     sleep(0.01);
-
-    let msgb = server.recv_multipart()?;
+    server.tick()?;
+    let msgb = server.recv()?;
     let recv_msg = String::from_utf8(msgb[0].to_vec())?;
     assert!(msg == recv_msg.as_str());
 
@@ -28,21 +30,23 @@ pub fn ping_pong() -> Result<(), Box<dyn Error>> {
     let mut server = Socket::<Dealer>::new().bind("0.0.0.0:2001")?;
     let mut client = Socket::<Dealer>::new().connect("127.0.0.1:2001")?;
 
+    sleep(0.01);
     let msg = "Ping";
-    client.send_multipart(&[msg.as_bytes()])?;
+    client.send(&[msg.as_bytes()])?;
+    client.tick()?;
 
     sleep(0.01);
-
-    let msgb = server.recv_multipart()?;
+    server.tick()?;
+    let msgb = server.recv()?;
     let recv_msg = String::from_utf8(msgb[0].to_vec())?;
     assert!(msg == recv_msg.as_str());
-
     let msg = "Pong";
-    server.send_multipart(&[msg.as_bytes()])?;
+    server.send(&[msg.as_bytes()])?;
+    server.tick()?;
 
     sleep(0.01);
-
-    let msgb = client.recv_multipart()?;
+    client.tick()?;
+    let msgb = client.recv()?;
     let recv_msg = String::from_utf8(msgb[0].to_vec())?;
     assert!(msg == recv_msg.as_str());
 
@@ -57,35 +61,34 @@ pub fn round_robin() -> Result<(), Box<dyn Error>> {
     let mut c = Socket::<Dealer>::new().connect("127.0.0.1:2002")?;
 
     sleep(0.01);
-    // prime the connnections
-
-    let ping = "ping".as_bytes();
-
-    a.send_multipart(&[ping])?;
-    b.send_multipart(&[ping])?;
-    c.send_multipart(&[ping])?;
+    a.send(&["ping1".as_bytes()])?;
+    b.send(&["ping2".as_bytes()])?;
+    c.send(&["ping3".as_bytes()])?;
+    a.tick()?;
+    b.tick()?;
+    c.tick()?;
 
     sleep(0.01);
-
+    server.tick()?;
     let mut server_got = 0;
-    while let Ok(msgb) = server.recv_multipart() {
+    while let Ok(msgb) = server.recv() {
         let msg = String::from_utf8(msgb[0].to_vec())?;
-        assert!(msg.as_str() == "ping");
+        assert!(msg.as_str().contains("ping"));
         server_got += 1;
     }
-
+    println!("server got {}", server_got);
     assert!(server_got == 3);
 
     for _ in 0..3 {
-        server.send_multipart(&["pong".as_bytes()])?;
+        server.send(&["pong".as_bytes()])?;
     }
+    server.tick()?;
 
     sleep(0.01);
-
     let socks = [&mut a, &mut b, &mut c];
-
     for client in socks {
-        let msgb = client.recv_multipart()?;
+        client.tick()?;
+        let msgb = client.recv()?;
         let msg = String::from_utf8(msgb[0].to_vec())?;
 
         assert!(msg.as_str() == "pong");
@@ -105,11 +108,12 @@ pub fn large_message() -> Result<(), Box<dyn Error>> {
     }
     large_bin.push(1);
 
-    client.send_multipart(&[&large_bin])?;
+    client.send(&[&large_bin])?;
+    client.tick()?;
 
     sleep(0.01);
-
-    let msgb = server.recv_multipart()?;
+    server.tick()?;
+    let msgb = server.recv()?;
     assert!(msgb.len() == 1);
     assert!(msgb[0].len() == 100001);
     assert!(msgb[0][100000] == 1);
@@ -123,7 +127,6 @@ pub fn long_message() -> Result<(), Box<dyn Error>> {
     let mut client = Socket::<Dealer>::new().connect("127.0.0.1:2004")?;
 
     sleep(0.01);
-
     let mut long_msg_parts = vec![];
     long_msg_parts.push("hello".as_bytes().to_vec());
     for _ in 0..100 {
@@ -141,11 +144,12 @@ pub fn long_message() -> Result<(), Box<dyn Error>> {
         .map(|x| x.as_slice())
         .collect::<Vec<_>>();
 
-    client.send_multipart(&long_ref)?;
+    client.send(&long_ref)?;
+    client.tick()?;
 
     sleep(0.01);
-
-    let msgb = server.recv_multipart()?;
+    server.tick()?;
+    let msgb = server.recv()?;
     assert!(msgb.len() == 102);
 
     let start = String::from_utf8(msgb[0].to_vec())?;
@@ -163,7 +167,8 @@ fn sockets_register_as_peers_on_connect() -> Result<(), Box<dyn Error>> {
     Socket::<Dealer>::new().connect("127.0.0.1:2005")?;
     Socket::<Dealer>::new().connect("127.0.0.1:2005")?;
 
-    server.drain_control()?;
+    sleep(0.01);
+    server.tick()?;
 
     assert!(server.peers() == 2);
 
@@ -182,32 +187,31 @@ fn long_pause_doesnt_remove_peer() -> Result<(), Box<dyn Error>> {
     let mut ct = 0;
 
     sleep(0.01);
-
-    radio.drain_control()?;
-    radio.send_multipart(&["hello".as_bytes()])?;
+    radio.send(&["hello".as_bytes()])?;
+    radio.tick()?;
 
     sleep(0.01);
-
-    while let Ok(_) = dish.recv_multipart() {
+    dish.tick()?;
+    while let Ok(_) = dish.recv() {
         ct += 1;
     }
     assert!(ct == 1);
 
     // Sleep for 10x longer than the peer keepalive.
     sleep(0.1);
-
-    radio.send_multipart(&["world".as_bytes()])?;
+    radio.send(&["world".as_bytes()])?;
+    radio.tick()?;
 
     sleep(0.01);
-
-    while let Ok(_) = dish.recv_multipart() {
+    dish.tick()?;
+    while let Ok(_) = dish.recv() {
         ct += 1;
     }
     assert!(ct == 2);
 
     sleep(0.01);
-
-    radio.send_multipart(&["final".as_bytes()])?;
+    radio.send(&["final".as_bytes()])?;
+    radio.tick()?;
 
     assert!(radio.peers() == 1);
 
