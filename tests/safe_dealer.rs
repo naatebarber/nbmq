@@ -8,24 +8,34 @@ fn sleep(n: f64) {
 
 #[test]
 fn safe_socket_resends_until_success() -> Result<(), Box<dyn Error>> {
+    let mut server = Socket::<SafeDealer>::new().bind("0.0.0.0:4000")?;
+
     let mut client = Socket::<SafeDealer>::new()
         .set_safe_resend_ivl(0.01)
         .set_safe_resent_limit(20)
         .connect("127.0.0.1:4000")?;
 
+    assert!(server.peers() == 0 && client.peers() == 0);
+
+    sleep(0.01);
+    server.tick()?;
+    assert!(server.peers() == 1);
+
+    sleep(0.01);
+    client.tick()?;
+    assert!(client.peers() == 1);
+
     for i in 10..20 {
         let data = vec![0u8; i];
-        let _ = client.send(&[data.as_slice()]);
+        client.send(&[data.as_slice()])?;
     }
-
-    let mut server = Socket::<SafeDealer>::new().bind("0.0.0.0:4000")?;
 
     sleep(0.02);
     client.tick()?;
 
     for i in 20..30 {
         let data = vec![0u8; i];
-        let _ = client.send(&[data.as_slice()]);
+        client.send(&[data.as_slice()])?;
     }
 
     sleep(0.02);
@@ -33,8 +43,10 @@ fn safe_socket_resends_until_success() -> Result<(), Box<dyn Error>> {
 
     for i in 30..40 {
         let data = vec![0u8; i];
-        let _ = client.send(&[data.as_slice()]);
+        client.send(&[data.as_slice()])?;
     }
+
+    client.tick()?;
 
     sleep(0.02);
     server.tick()?;
@@ -49,11 +61,6 @@ fn safe_socket_resends_until_success() -> Result<(), Box<dyn Error>> {
 
     println!("datas {}", datas.len());
     assert!(datas.len() == 30);
-
-    // THE ISSUE IS THAT RECONNECT WILL RETURN WITH SUCCESS REGARDLESS OF WHETHER OR NOT IT
-    // SUCCEEDED. and what does is causes fucker not to reconnect until after it has failed a
-    // message or two. Its completely adequate behavior, its not broken, its just irritating for
-    // this test specifically.
 
     Ok(())
 }
@@ -77,28 +84,26 @@ pub fn safe_socket_resends_to_correct_peers() -> Result<(), Box<dyn Error>> {
 
     sleep(0.01);
     server.tick()?;
-    server.send(&["to client 2".as_bytes()])?;
-    println!("2. sent to client 2");
 
-    sleep(0.02);
-    server.tick()?;
+    server.send(&["to client 2".as_bytes()])?;
     server.send(&["to client 1".as_bytes()])?;
-
-    sleep(0.02);
-    server.tick()?;
     server.send(&["to client 2".as_bytes()])?;
+    server.tick()?;
 
     sleep(0.01);
     client.tick()?;
     client_2.tick()?;
     let mut ct = 0;
     while let Ok(_) = client.recv() {
+        println!("received client");
         ct += 1;
     }
     while let Ok(_) = client_2.recv() {
+        println!("received client_2");
         ct += 1;
     }
 
+    println!("{}", ct);
     assert!(ct == 4);
 
     Ok(())

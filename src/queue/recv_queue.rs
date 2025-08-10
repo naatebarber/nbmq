@@ -106,14 +106,14 @@ impl IncomingMessage {
 pub struct RecvQueue {
     pub opt: SockOpt,
 
-    pub incoming: HashMap<u64, IncomingMessage>,
-    pub complete: HashMap<u64, Vec<Vec<u8>>>,
-    pub complete_deque: VecDeque<u64>,
+    pub incoming: HashMap<(u64, u64), IncomingMessage>,
+    pub complete: HashMap<(u64, u64), Vec<Vec<u8>>>,
+    pub complete_deque: VecDeque<(u64, u64)>,
 
     pub last_maint: Instant,
 
-    dedup: HashSet<u64>,
-    dedup_deque: VecDeque<(u64, Instant)>,
+    dedup: HashSet<(u64, u64)>,
+    dedup_deque: VecDeque<((u64, u64), Instant)>,
 }
 
 impl RecvQueue {
@@ -152,8 +152,9 @@ impl RecvQueue {
         }
 
         let frame = Frame::parse(data)?;
+        let key = (frame.session_id, frame.message_id);
 
-        let message = match self.incoming.get_mut(&frame.message_hash) {
+        let message = match self.incoming.get_mut(&key) {
             Some(m) => m,
             None => {
                 if self.incoming.len() >= self.opt.recv_hwm {
@@ -161,13 +162,13 @@ impl RecvQueue {
                 }
 
                 self.incoming
-                    .entry(frame.message_hash)
+                    .entry(key)
                     .or_insert(IncomingMessage::new(frame.message_size, frame.part_count))
             }
         };
 
         if message.add_frame(&frame)? {
-            if let Some(message) = self.incoming.remove(&frame.message_hash) {
+            if let Some(message) = self.incoming.remove(&key) {
                 if self.complete.len() < self.opt.recv_hwm {
                     let reassembly = message
                         .parts
@@ -175,8 +176,8 @@ impl RecvQueue {
                         .filter_map(|x| Some(x?.data))
                         .collect::<Vec<Vec<u8>>>();
 
-                    self.complete.entry(frame.message_hash).or_insert_with(|| {
-                        self.complete_deque.push_back(frame.message_hash);
+                    self.complete.entry(key).or_insert_with(|| {
+                        self.complete_deque.push_back(key);
                         reassembly
                     });
                 } else {
@@ -188,22 +189,22 @@ impl RecvQueue {
         Ok(())
     }
 
-    pub fn pull(&mut self) -> Option<(Vec<Vec<u8>>, u64)> {
+    pub fn pull(&mut self) -> Option<(Vec<Vec<u8>>, (u64, u64))> {
         self.maint();
 
         loop {
-            let Some(hash) = self.complete_deque.pop_front() else {
+            let Some(key) = self.complete_deque.pop_front() else {
                 return None;
             };
 
-            if let Some(message) = self.complete.remove(&hash) {
-                return Some((message, hash));
+            if let Some(message) = self.complete.remove(&key) {
+                return Some((message, key));
             }
         }
     }
 
-    pub fn pull_safe(&mut self) -> Option<(Vec<Vec<u8>>, u64)> {
-        let Some((message, hash)) = self.pull() else {
+    pub fn pull_safe(&mut self) -> Option<(Vec<Vec<u8>>, (u64, u64))> {
+        let Some((message, key)) = self.pull() else {
             return None;
         };
 
@@ -213,14 +214,14 @@ impl RecvQueue {
             && self.dedup_deque[0].1.duration_since(now).as_secs_f64()
                 > self.opt.safe_hash_dedup_ttl
         {
-            let Some((hash, ..)) = self.dedup_deque.pop_front() else {
+            let Some((key, ..)) = self.dedup_deque.pop_front() else {
                 break;
             };
-            self.dedup.remove(&hash);
+            self.dedup.remove(&key);
         }
 
-        if self.dedup.insert(hash) {
-            return Some((message, hash));
+        if self.dedup.insert(key) {
+            return Some((message, key));
         }
 
         return None;

@@ -24,9 +24,11 @@ pub fn send_queue_to_recv_queue() {
     let mut sq = SendQueue::new(opt.clone());
     let mut rq = RecvQueue::new(opt);
 
+    let session = 0;
+
     let a = message(10000);
     let ref_a = a.iter().map(|x| x.as_slice()).collect::<Vec<_>>();
-    sq.push(ref_a.as_slice(), 0).unwrap();
+    sq.push(session, ref_a.as_slice(), 0).unwrap();
 
     while let Some(f) = sq.pull() {
         rq.push(f.as_slice()).unwrap();
@@ -46,9 +48,11 @@ pub fn recv_queue_will_maint_incomplete() {
     let mut sq = SendQueue::new(opt.clone());
     let mut rq = RecvQueue::new(opt);
 
+    let session = 0;
+
     let a = message(10000);
     let ref_a = a.iter().map(|x| x.as_slice()).collect::<Vec<_>>();
-    sq.push(ref_a.as_slice(), 0).unwrap();
+    sq.push(session, ref_a.as_slice(), 0).unwrap();
 
     if let Some(f) = sq.pull() {
         rq.push(f.as_slice()).unwrap();
@@ -69,10 +73,11 @@ pub fn safe_send_queue_will_resend_until_limit() {
     opt.safe_resend_ivl = 0.01;
 
     let mut sq = SendQueue::new(opt.clone());
+    let session = 0;
 
     let a = ["hello".as_bytes()];
 
-    sq.push(&a, 0).unwrap();
+    sq.push(session, &a, 0).unwrap();
 
     let frame = sq.pull_safe().unwrap();
 
@@ -103,9 +108,11 @@ pub fn safe_send_queue_will_stop_sending_when_confirmed() {
 
     let mut sq = SendQueue::new(opt.clone());
 
+    let session = 0;
+
     let a = ["hello".as_bytes()];
 
-    sq.push(&a, 0).unwrap();
+    sq.push(session, &a, 0).unwrap();
 
     let frame = sq.pull_safe().unwrap();
 

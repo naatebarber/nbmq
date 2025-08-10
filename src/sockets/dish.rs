@@ -35,7 +35,7 @@ impl AsSocket for Dish {
     }
 
     fn send(&mut self, _data: &[&[u8]]) -> Result<(), Box<dyn Error>> {
-        return Err("send_multipart not available on Dish".into());
+        return Err("send not available on Dish".into());
     }
 
     fn recv(&mut self) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {

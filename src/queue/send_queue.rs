@@ -52,7 +52,7 @@ impl SendQueue {
         self.frames.len() + self.sent.len()
     }
 
-    pub fn push(&mut self, data: &[&[u8]], nonce: u64) -> Result<(), Box<dyn Error>> {
+    pub fn push(&mut self, session: u64, data: &[&[u8]], nonce: u64) -> Result<(), Box<dyn Error>> {
         if self.message_count >= self.opt.send_hwm {
             return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
         }
@@ -78,6 +78,8 @@ impl SendQueue {
                 let chunk_size = chunk.len();
 
                 let frame = Frame::encode(
+                    0,
+                    session,
                     message_hash,
                     parts as u8,
                     i as u8,
@@ -154,7 +156,6 @@ impl SendQueue {
                 }
                 QueueItem::Marker => {
                     self.message_count -= 1;
-                    return None;
                 }
             }
         }

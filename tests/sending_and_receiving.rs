@@ -12,6 +12,10 @@ pub fn basic_send() -> Result<(), Box<dyn Error>> {
     let mut client = Socket::<Dealer>::new().connect("127.0.0.1:2000")?;
 
     sleep(0.01);
+    server.tick()?;
+
+    sleep(0.01);
+    client.tick()?;
     let msg = "Hello World!";
     client.send(&[msg.as_bytes()])?;
     client.tick()?;
@@ -31,6 +35,10 @@ pub fn ping_pong() -> Result<(), Box<dyn Error>> {
     let mut client = Socket::<Dealer>::new().connect("127.0.0.1:2001")?;
 
     sleep(0.01);
+    server.tick()?;
+
+    sleep(0.01);
+    client.tick()?;
     let msg = "Ping";
     client.send(&[msg.as_bytes()])?;
     client.tick()?;
@@ -61,6 +69,12 @@ pub fn round_robin() -> Result<(), Box<dyn Error>> {
     let mut c = Socket::<Dealer>::new().connect("127.0.0.1:2002")?;
 
     sleep(0.01);
+    server.tick()?;
+
+    sleep(0.01);
+    a.tick()?;
+    b.tick()?;
+    c.tick()?;
     a.send(&["ping1".as_bytes()])?;
     b.send(&["ping2".as_bytes()])?;
     c.send(&["ping3".as_bytes()])?;
@@ -102,12 +116,16 @@ pub fn large_message() -> Result<(), Box<dyn Error>> {
     let mut server = Socket::<Dealer>::new().bind("0.0.0.0:2003")?;
     let mut client = Socket::<Dealer>::new().connect("127.0.0.1:2003")?;
 
+    sleep(0.01);
+    server.tick()?;
+
+    sleep(0.01);
+    client.tick()?;
     let mut large_bin = vec![];
     for _ in 0..100000 {
         large_bin.push(0);
     }
     large_bin.push(1);
-
     client.send(&[&large_bin])?;
     client.tick()?;
 
@@ -127,6 +145,10 @@ pub fn long_message() -> Result<(), Box<dyn Error>> {
     let mut client = Socket::<Dealer>::new().connect("127.0.0.1:2004")?;
 
     sleep(0.01);
+    server.tick()?;
+
+    sleep(0.01);
+    client.tick()?;
     let mut long_msg_parts = vec![];
     long_msg_parts.push("hello".as_bytes().to_vec());
     for _ in 0..100 {
@@ -187,6 +209,7 @@ fn long_pause_doesnt_remove_peer() -> Result<(), Box<dyn Error>> {
     let mut ct = 0;
 
     sleep(0.01);
+    radio.tick()?;
     radio.send(&["hello".as_bytes()])?;
     radio.tick()?;
 
@@ -214,6 +237,19 @@ fn long_pause_doesnt_remove_peer() -> Result<(), Box<dyn Error>> {
     radio.tick()?;
 
     assert!(radio.peers() == 1);
+
+    Ok(())
+}
+
+#[test]
+pub fn disconnected_client_fails_to_send() -> Result<(), Box<dyn Error>> {
+    let mut client = Socket::<Dealer>::new().connect("127.0.0.1:2007")?;
+
+    client.tick()?;
+    match client.send(&["Hello".as_bytes()]) {
+        Ok(_) => panic!("disconnected client sent successfully"),
+        Err(e) => assert!(e.to_string() == "No peers"),
+    }
 
     Ok(())
 }

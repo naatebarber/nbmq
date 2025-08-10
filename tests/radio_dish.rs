@@ -34,6 +34,7 @@ fn radio_sends_to_multiple_dish() -> Result<(), Box<dyn Error>> {
     let dishes = [&mut dish_1, &mut dish_2, &mut dish_3];
 
     sleep(0.01);
+    radio.tick()?;
     radio.send(&["broadcast".as_bytes()])?;
     radio.tick()?;
 
@@ -79,6 +80,7 @@ fn radio_maints_dish_on_disconnect() -> Result<(), Box<dyn Error>> {
 
     // Send multipart from radio. This will internally drain control state, absorbing the connect
     // heartbeats from the connected dishes.
+    radio.tick()?;
     radio.send(&["broadcast".as_bytes()])?;
     radio.tick()?;
 
@@ -107,6 +109,7 @@ fn radio_maints_dish_on_disconnect() -> Result<(), Box<dyn Error>> {
     //
     // This logic is handled internally by Core, but radio/dish is the primary candidate where it
     // is needed.
+    radio.tick()?;
     radio.send(&["broadcast_2".as_bytes()])?;
     radio.send(&["broadcast_3".as_bytes()])?;
     radio.tick()?;

@@ -3,12 +3,10 @@ use std::{
     error::Error,
     hash::Hasher,
     io,
-    net::SocketAddr,
 };
 
 use crate::{
     core::{AsSocket, Core, SockOpt},
-    f,
     frame::ControlFrame,
     queue::{RecvQueue, SendQueue},
     util::hash::Fnv1a64,
@@ -19,10 +17,10 @@ pub struct SafeDealer {
     opt: SockOpt,
 
     unique: u64,
-    peers: Vec<SocketAddr>,
-    peer_set: HashSet<SocketAddr>,
+    peers: Vec<u64>,
+    peer_set: HashSet<u64>,
 
-    send_queues: HashMap<SocketAddr, SendQueue>,
+    send_queues: HashMap<u64, SendQueue>,
     recv_queue: RecvQueue,
 }
 
@@ -41,7 +39,7 @@ impl SafeDealer {
         }
     }
 
-    fn select_fair_queue_peer(&self) -> Result<&SocketAddr, Box<dyn Error>> {
+    fn select_fair_queue_peer(&self) -> Result<&u64, Box<dyn Error>> {
         let peer_ct = self.peers.len();
 
         if peer_ct < 1 {
@@ -82,19 +80,9 @@ impl AsSocket for SafeDealer {
             .entry(peer)
             .or_insert(SendQueue::new(self.opt.clone()));
 
-        send_queue.push(data, self.unique)?;
+        send_queue.push(peer, data, self.unique)?;
+        println!("send q len: {}", send_queue.len());
         self.unique = self.unique.wrapping_add(1);
-
-        let mut err: Option<Box<dyn Error>> = None;
-        while let Some(frame) = send_queue.pull_safe() {
-            if let Err(e) = self.core.send_peer(&frame, &peer) {
-                err = Some(e);
-            }
-        }
-
-        if let Some(e) = err {
-            return Err(e);
-        }
 
         Ok(())
     }
@@ -115,7 +103,7 @@ impl AsSocket for SafeDealer {
 
             if let Some(control) = control {
                 match control {
-                    ControlFrame::Ack(chunk) => {
+                    ControlFrame::Ack((session_id, chunk)) => {
                         if chunk.len() != 8 {
                             continue;
                         }
@@ -126,7 +114,7 @@ impl AsSocket for SafeDealer {
 
                         let send_queue = self
                             .send_queues
-                            .entry(peer)
+                            .entry(session_id)
                             .or_insert(SendQueue::new(self.opt.clone()));
 
                         send_queue.confirm_safe(hash);
@@ -142,39 +130,30 @@ impl AsSocket for SafeDealer {
             let hash = hasher.finish();
 
             self.core.send_peer(
-                &ControlFrame::Ack(hash.to_be_bytes().to_vec()).encode(),
+                &ControlFrame::Ack((peer, hash.to_be_bytes().to_vec())).encode(),
                 &peer,
             )?;
 
             self.recv_queue.push(&frame)?;
         }
 
-        let queue_sizes = self
-            .send_queues
-            .iter()
-            .map(|(p, q)| (p.clone(), q.len()))
-            .collect::<Vec<(SocketAddr, usize)>>();
-        let distribution =
-            f::softmax(&queue_sizes.iter().map(|x| x.1 as f64).collect::<Vec<f64>>());
-        let frames_per_queue = distribution
-            .iter()
-            .map(|x| f64::floor(x * self.opt.max_tick_send as f64) as usize)
-            .collect::<Vec<usize>>();
+        let n_per = if self.send_queues.len() > 0 {
+            self.opt.max_tick_send / self.send_queues.len()
+        } else {
+            0
+        };
 
-        for i in 0..frames_per_queue.len() {
-            let peer = queue_sizes[i].0;
-            let limit = frames_per_queue[i];
-            let Some(send_queue) = self.send_queues.get_mut(&peer) else {
-                continue;
-            };
+        for (session_id, send_queue) in self.send_queues.iter_mut() {
+            let mut ct = 0;
 
-            for _ in 0..limit {
-                let Some(frame) = send_queue.pull_safe() else {
+            while let Some(frame) = send_queue.pull_safe() {
+                if let Err(_) = self.core.send_peer(&frame, session_id) {
                     break;
-                };
-
-                if let Err(_) = self.core.send_peer(&frame, &peer) {
-                    break;
+                } else {
+                    ct += 1;
+                    if ct > n_per {
+                        break;
+                    }
                 }
             }
         }
