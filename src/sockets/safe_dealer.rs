@@ -158,6 +158,7 @@ impl AsSocket for SafeDealer {
             }
         }
 
+        self.core.maint()?;
         self.check_peer_update();
 
         Ok(())

@@ -103,6 +103,7 @@ impl AsSocket for Radio {
             }
         }
 
+        self.core.maint()?;
         self.check_peer_update();
 
         Ok(())

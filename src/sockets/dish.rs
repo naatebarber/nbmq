@@ -61,6 +61,8 @@ impl AsSocket for Dish {
             }
         }
 
+        self.core.maint()?;
+
         return Ok(());
     }
 
