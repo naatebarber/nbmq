@@ -40,7 +40,7 @@ impl Dealer {
         let peer_ct = self.peers.len();
 
         if peer_ct < 1 {
-            return Err("No peers".into());
+            return Err("No peer".into());
         }
 
         return Ok(&self.peers[self.unique as usize % peer_ct]);
@@ -92,8 +92,6 @@ impl AsSocket for Dealer {
     }
 
     fn tick(&mut self) -> Result<(), Box<dyn Error>> {
-        self.check_peer_update();
-
         for _ in 0..self.opt.max_tick_recv {
             if let Ok((frame, _, control)) = self.core.recv() {
                 if let Some(_) = &control {
@@ -107,6 +105,8 @@ impl AsSocket for Dealer {
                 break;
             }
         }
+
+        self.check_peer_update();
 
         let n_per = if self.send_queues.len() > 0 {
             self.opt.max_tick_send / self.send_queues.len()
@@ -129,6 +129,7 @@ impl AsSocket for Dealer {
             }
         }
 
+        self.core.maint()?;
         self.check_peer_update();
 
         Ok(())

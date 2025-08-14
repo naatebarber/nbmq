@@ -19,7 +19,7 @@ fn message(bytes: usize) -> Vec<Vec<u8>> {
 #[test]
 pub fn send_queue_to_recv_queue() {
     let mut opt = SockOpt::default();
-    opt.uncompleted_message_ttl = 0.1;
+    opt.uncompleted_message_ttl = Duration::from_secs_f64(0.1);
 
     let mut sq = SendQueue::new(opt.clone());
     let mut rq = RecvQueue::new(opt);
@@ -42,8 +42,8 @@ pub fn send_queue_to_recv_queue() {
 #[test]
 pub fn recv_queue_will_maint_incomplete() {
     let mut opt = SockOpt::default();
-    opt.uncompleted_message_ttl = 0.1;
-    opt.queue_maint_ivl = 0.1;
+    opt.uncompleted_message_ttl = Duration::from_secs_f64(0.1);
+    opt.queue_maint_ivl = Duration::from_secs_f64(0.1);
 
     let mut sq = SendQueue::new(opt.clone());
     let mut rq = RecvQueue::new(opt);
@@ -70,7 +70,7 @@ pub fn recv_queue_will_maint_incomplete() {
 pub fn safe_send_queue_will_resend_until_limit() {
     let mut opt = SockOpt::default();
     opt.safe_resend_limit = 2;
-    opt.safe_resend_ivl = 0.01;
+    opt.safe_resend_ivl = Duration::from_secs_f64(0.01);
 
     let mut sq = SendQueue::new(opt.clone());
     let session = 0;
@@ -104,7 +104,7 @@ pub fn safe_send_queue_will_resend_until_limit() {
 pub fn safe_send_queue_will_stop_sending_when_confirmed() {
     let mut opt = SockOpt::default();
     opt.safe_resend_limit = 2;
-    opt.safe_resend_ivl = 0.01;
+    opt.safe_resend_ivl = Duration::from_secs_f64(0.01);
 
     let mut sq = SendQueue::new(opt.clone());
 

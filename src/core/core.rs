@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     error::Error,
+    hash::Hasher,
     net::{SocketAddr, UdpSocket},
     str::FromStr,
     time::Instant,
@@ -8,14 +9,23 @@ use std::{
 
 use super::sock_opt::SockOpt;
 use crate::{
-    consts,
-    frame::{ControlFrame, Frame},
+    frame::{self, ControlFrame, Frame},
+    hash::Fnv1a64,
+    random::XORShift,
+    ts::get_ts_u64,
 };
+
+#[derive(PartialEq, Eq)]
+pub struct ConnectStatus {
+    addr: SocketAddr,
+    session: u64,
+    last_reconnect: Instant,
+}
 
 #[derive(PartialEq, Eq)]
 pub enum SockMode {
     Bind,
-    Connect((SocketAddr, u64)),
+    Connect(ConnectStatus),
 }
 
 pub struct Peer {
@@ -37,6 +47,7 @@ impl Peer {
 pub struct Core {
     sock: UdpSocket,
     opt: SockOpt,
+    rng: XORShift,
 
     pub mode: SockMode,
     pub peer_update: bool,
@@ -45,16 +56,16 @@ pub struct Core {
 
 impl Core {
     pub fn bind(addr: &str, opt: SockOpt) -> Result<Core, Box<dyn Error>> {
-        let mut socket = UdpSocket::bind(addr)?;
+        let socket = UdpSocket::bind(addr)?;
         socket.set_nonblocking(true)?;
-
-        Core::drain_socket(&mut socket);
 
         Ok(Core {
             sock: socket,
             opt,
+            rng: XORShift::new(get_ts_u64()),
 
             mode: SockMode::Bind,
+
             peer_update: true,
             peers: HashMap::new(),
         })
@@ -72,20 +83,17 @@ impl Core {
         Ok(Core {
             sock,
             opt,
+            rng: XORShift::new(get_ts_u64()),
 
-            mode: SockMode::Connect((peer_addr, 0)),
+            mode: SockMode::Connect(ConnectStatus {
+                addr: peer_addr,
+                session: 0,
+                last_reconnect: Instant::now(),
+            }),
+
             peer_update: true,
             peers,
         })
-    }
-
-    fn drain_socket(sock: &mut UdpSocket) {
-        let mut buf = [0u8; 2048];
-        loop {
-            if let Err(_) = sock.recv_from(&mut buf) {
-                return;
-            }
-        }
     }
 
     fn connect_socket(sock: &mut UdpSocket, peer_addr: &SocketAddr) -> Result<(), Box<dyn Error>> {
@@ -96,28 +104,38 @@ impl Core {
     }
 
     fn reconnect(&mut self) -> Result<(), Box<dyn Error>> {
-        match self.mode {
-            SockMode::Connect((peer_addr, session_id)) => {
-                if let None = self.peers.get(&session_id) {
-                    Core::connect_socket(&mut self.sock, &peer_addr)?;
+        if let SockMode::Connect(ConnectStatus {
+            addr,
+            session,
+            last_reconnect,
+        }) = &mut self.mode
+        {
+            if let None = self.peers.get(&session) {
+                let now = Instant::now();
+
+                if now.duration_since(*last_reconnect) > self.opt.reconnect_wait {
+                    *last_reconnect = now;
+                    Core::connect_socket(&mut self.sock, &addr)?;
                 }
             }
-            _ => (),
         }
 
         return Ok(());
     }
 
     fn recv_frame(&mut self) -> Result<(Vec<u8>, SocketAddr), Box<dyn Error>> {
-        self.reconnect()?;
+        let mut buffer = vec![0u8; frame::MAX_FRAME_SIZE];
 
-        let mut buffer = vec![0u8; consts::MAX_FRAME_SIZE];
-
-        let recv_addr = match self.mode {
-            SockMode::Connect((peer_addr, _)) => {
-                let bytes_recv = self.sock.recv(&mut buffer)?;
+        let recv_addr = match &mut self.mode {
+            SockMode::Connect(ConnectStatus { addr, .. }) => {
+                let (bytes_recv, recv_addr) = self.sock.recv_from(&mut buffer)?;
                 buffer.truncate(bytes_recv);
-                peer_addr
+
+                if *addr != recv_addr {
+                    *addr = recv_addr;
+                }
+
+                recv_addr
             }
             SockMode::Bind => {
                 let (bytes_recv, recv_addr) = self.sock.recv_from(&mut buffer)?;
@@ -141,10 +159,11 @@ impl Core {
 
             if let Some(peer) = self.peers.get_mut(&data_frame.session_id) {
                 peer.last_seen = Instant::now();
+                if peer.addr != *peer_addr {
+                    peer.addr = *peer_addr;
+                }
 
-                if peer.last_seen.duration_since(peer.last_sent).as_secs_f64()
-                    > self.opt.peer_heartbeat_ivl
-                {
+                if Instant::now().duration_since(peer.last_sent) > self.opt.peer_heartbeat_ivl {
                     peer.last_sent = Instant::now();
                     self.send_direct(
                         &ControlFrame::Heartbeat(data_frame.session_id).encode(),
@@ -158,7 +177,11 @@ impl Core {
 
         match control_frame {
             ControlFrame::Connect => {
-                let session_id = super::f::session_id(peer_addr);
+                println!("CONNECT");
+                let mut hasher = Fnv1a64::new();
+                hasher.write(&self.rng.sample().to_be_bytes());
+                hasher.write(peer_addr.to_string().as_bytes());
+                let session_id = hasher.finish();
 
                 self.peers.insert(
                     session_id,
@@ -173,8 +196,9 @@ impl Core {
                 self.peer_update = true;
             }
             ControlFrame::Connected(session_id) => {
-                if let SockMode::Connect((_, session)) = &mut self.mode {
+                if let SockMode::Connect(ConnectStatus { session, .. }) = &mut self.mode {
                     *session = session_id;
+                    self.peers.drain();
                 }
 
                 self.peers.insert(
@@ -190,15 +214,22 @@ impl Core {
                 self.peer_update = true;
             }
             ControlFrame::Disconnected(session_id) => {
-                if let SockMode::Connect((_, session)) = &mut self.mode {
+                if let SockMode::Connect(ConnectStatus { session, .. }) = &mut self.mode {
                     *session = 0;
+                    self.peers.drain();
                 }
 
                 self.peers.remove(&session_id);
+
+                self.send_direct(&ControlFrame::Connect.encode(), peer_addr)?;
+                self.peer_update = true;
             }
             ControlFrame::Heartbeat(session_id) => {
                 if let Some(peer) = self.peers.get_mut(&session_id) {
                     peer.last_seen = Instant::now();
+                    if peer.addr != *peer_addr {
+                        peer.addr = *peer_addr;
+                    }
                 } else {
                     self.send_direct(&ControlFrame::Disconnected(session_id).encode(), peer_addr)?;
                 };
@@ -210,15 +241,28 @@ impl Core {
     }
 
     pub fn recv(&mut self) -> Result<(Vec<u8>, u64, Option<ControlFrame>), Box<dyn Error>> {
-        let (frame, peer_addr) = self.recv_frame()?;
-        let control = match self.control(&frame, &peer_addr) {
-            Ok(control) => control,
-            Err(_) => None,
-        };
+        loop {
+            let (frame, peer_addr) = self.recv_frame()?;
+            let session = u64::from_be_bytes(frame[2..10].try_into()?);
 
-        let session = u64::from_be_bytes(frame[2..10].try_into()?);
+            let control = match self.control(&frame, &peer_addr) {
+                Ok(control) => control,
+                Err(_) => {
+                    // This error could result from trying to send control messages
+                    // If a send fails, we want to attempt a reconnect.
+                    self.reconnect()?;
+                    None
+                }
+            };
 
-        return Ok((frame, session, control));
+            // If the message is not session oriented, it has no
+            // business being promoted to the messaging pattern level
+            if !self.peers.contains_key(&session) {
+                continue;
+            }
+
+            return Ok((frame, session, control));
+        }
     }
 
     pub fn send_direct(
@@ -227,7 +271,8 @@ impl Core {
         peer_addr: &SocketAddr,
     ) -> Result<(), Box<dyn Error>> {
         match self.mode {
-            SockMode::Connect(_) => {
+            SockMode::Connect(ConnectStatus { addr, .. }) => {
+                debug_assert_eq!(*peer_addr, addr);
                 self.sock.send(data)?;
             }
             SockMode::Bind => {
@@ -238,52 +283,17 @@ impl Core {
         Ok(())
     }
 
-    pub fn send_all(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
-        match &mut self.mode {
-            SockMode::Connect((_, session_id)) => {
-                let Some(peer) = self.peers.get_mut(&session_id) else {
-                    *session_id = 0;
-                    return Err("No peer".into());
-                };
-
-                self.sock.send(data)?;
-
-                peer.last_sent = Instant::now();
-            }
-            SockMode::Bind => {
-                let mut drop_stale_peers = vec![];
-
-                for (session_id, peer) in self.peers.iter_mut() {
-                    if let Ok(_) = self.sock.send_to(data, peer.addr) {
-                        peer.last_sent = Instant::now();
-                    }
-
-                    if Instant::now().duration_since(peer.last_seen).as_secs_f64()
-                        > self.opt.peer_keepalive
-                    {
-                        drop_stale_peers.push(session_id.clone());
-                        self.peer_update = true;
-                    }
-                }
-
-                drop_stale_peers.drain(..).for_each(|peer_addr| {
-                    self.peers.remove(&peer_addr);
-                });
-            }
-        }
-
-        return Ok(());
-    }
-
     pub fn send_peer(&mut self, data: &[u8], session_id: &u64) -> Result<(), Box<dyn Error>> {
+        let now = Instant::now();
+
         let Some(peer) = self.peers.get_mut(session_id) else {
             return Err("No such peer".into());
         };
 
-        peer.last_sent = Instant::now();
+        peer.last_sent = now;
         let addr = peer.addr;
 
-        if Instant::now().duration_since(peer.last_seen).as_secs_f64() > self.opt.peer_keepalive {
+        if now.duration_since(peer.last_seen) > self.opt.peer_keepalive {
             self.peers.remove(session_id);
             return Ok(());
         }
@@ -300,7 +310,41 @@ impl Core {
         Ok(())
     }
 
-    pub fn maint(&mut self) {}
+    pub fn maint(&mut self) -> Result<(), Box<dyn Error>> {
+        let now = Instant::now();
+
+        let mut send_heartbeat = Vec::with_capacity(self.peers.len());
+        let mut prune = Vec::with_capacity(self.peers.len());
+
+        self.peers.iter().for_each(|(session_id, peer)| {
+            if now.duration_since(peer.last_seen) > self.opt.peer_keepalive {
+                prune.push(*session_id);
+            }
+
+            if now.duration_since(peer.last_sent) > self.opt.peer_heartbeat_ivl {
+                send_heartbeat.push((*session_id, peer.addr));
+            }
+        });
+
+        send_heartbeat
+            .drain(..)
+            .for_each(|(session_id, peer_addr)| {
+                if let Err(_) =
+                    self.send_direct(&ControlFrame::Heartbeat(session_id).encode(), &peer_addr)
+                {
+                    prune.push(session_id);
+                }
+            });
+
+        prune.drain(..).for_each(|session_id| {
+            self.peer_update = true;
+            self.peers.remove(&session_id);
+        });
+
+        self.reconnect()?;
+
+        Ok(())
+    }
 
     pub fn update_peers(&mut self) -> Option<Vec<u64>> {
         if self.peer_update {

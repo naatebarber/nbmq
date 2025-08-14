@@ -248,7 +248,7 @@ pub fn disconnected_client_fails_to_send() -> Result<(), Box<dyn Error>> {
     client.tick()?;
     match client.send(&["Hello".as_bytes()]) {
         Ok(_) => panic!("disconnected client sent successfully"),
-        Err(e) => assert!(e.to_string() == "No peers"),
+        Err(e) => assert!(e.to_string() == "No peer"),
     }
 
     Ok(())

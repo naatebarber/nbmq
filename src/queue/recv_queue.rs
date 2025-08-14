@@ -5,7 +5,10 @@ use std::{
     time::Instant,
 };
 
-use crate::{SockOpt, consts, frame::Frame};
+use crate::{
+    SockOpt,
+    frame::{self, Frame},
+};
 
 #[derive(Clone)]
 pub struct MessagePart {
@@ -135,19 +138,18 @@ impl RecvQueue {
     fn maint(&mut self) {
         let now = Instant::now();
 
-        if now.duration_since(self.last_maint).as_secs_f64() < self.opt.queue_maint_ivl {
+        if now.duration_since(self.last_maint) < self.opt.queue_maint_ivl {
             return;
         }
 
-        self.incoming.retain(|_, v| {
-            now.duration_since(v.last_modify).as_secs_f64() < self.opt.uncompleted_message_ttl
-        });
+        self.incoming
+            .retain(|_, v| now.duration_since(v.last_modify) < self.opt.uncompleted_message_ttl);
 
         self.last_maint = now;
     }
 
     pub fn push(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
-        if data.len() < consts::HEADER_SIZE {
+        if data.len() < frame::HEADER_SIZE {
             return Err(Box::new(io::Error::from(io::ErrorKind::InvalidData)));
         }
 
@@ -211,8 +213,7 @@ impl RecvQueue {
         let now = Instant::now();
 
         while self.dedup_deque.len() > 0
-            && self.dedup_deque[0].1.duration_since(now).as_secs_f64()
-                > self.opt.safe_hash_dedup_ttl
+            && self.dedup_deque[0].1.duration_since(now) > self.opt.safe_hash_dedup_ttl
         {
             let Some((key, ..)) = self.dedup_deque.pop_front() else {
                 break;

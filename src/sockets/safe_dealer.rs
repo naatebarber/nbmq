@@ -43,7 +43,7 @@ impl SafeDealer {
         let peer_ct = self.peers.len();
 
         if peer_ct < 1 {
-            return Err("No peers".into());
+            return Err("No peer".into());
         }
 
         return Ok(&self.peers[self.unique as usize % peer_ct]);

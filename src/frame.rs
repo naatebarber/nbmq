@@ -1,17 +1,5 @@
 use std::error::Error;
 
-// v0.1.0
-// | message_hash; 8
-// | part_count; 1
-// | part_index; 1
-// | message_size; 4
-// | part_size; 4
-// | chunk_size; 2
-// | chunk_offset; 4
-// | data
-//
-// HEADER = 24b
-
 // v0.2.0
 // | version; 1
 // | kind; 1

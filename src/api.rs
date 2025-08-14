@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use crate::{AsSocket, SockOpt};
 
@@ -25,38 +25,53 @@ impl<T: AsSocket> Socket<T> {
         self
     }
 
-    pub fn set_safe_resend_ivl(mut self, safe_resend_ivl: f64) -> Self {
-        self.opt.safe_resend_ivl = safe_resend_ivl;
-        self
-    }
-
     pub fn set_safe_resent_limit(mut self, safe_resend_limit: usize) -> Self {
         self.opt.safe_resend_limit = safe_resend_limit;
         self
     }
 
-    pub fn set_safe_hash_dedup_ttl(mut self, safe_hash_dedup_ttl: f64) -> Self {
-        self.opt.safe_hash_dedup_ttl = safe_hash_dedup_ttl;
+    pub fn set_max_tick_send(mut self, max_tick_send: usize) -> Self {
+        self.opt.max_tick_send = max_tick_send;
+        self
+    }
+
+    pub fn set_max_tick_recv(mut self, max_tick_recv: usize) -> Self {
+        self.opt.max_tick_recv = max_tick_recv;
         self
     }
 
     pub fn set_uncompleted_message_ttl(mut self, uncompleted_message_ttl: f64) -> Self {
-        self.opt.uncompleted_message_ttl = uncompleted_message_ttl;
+        self.opt.uncompleted_message_ttl = Duration::from_secs_f64(uncompleted_message_ttl);
         self
     }
 
     pub fn set_queue_maint_ivl(mut self, queue_maint_ivl: f64) -> Self {
-        self.opt.queue_maint_ivl = queue_maint_ivl;
-        self
-    }
-
-    pub fn set_peer_keepalive(mut self, peer_keepalive: f64) -> Self {
-        self.opt.peer_keepalive = peer_keepalive;
+        self.opt.queue_maint_ivl = Duration::from_secs_f64(queue_maint_ivl);
         self
     }
 
     pub fn set_peer_heartbeat_ivl(mut self, peer_heartbeat_ivl: f64) -> Self {
-        self.opt.peer_heartbeat_ivl = peer_heartbeat_ivl;
+        self.opt.peer_heartbeat_ivl = Duration::from_secs_f64(peer_heartbeat_ivl);
+        self
+    }
+
+    pub fn set_peer_keepalive(mut self, peer_keepalive: f64) -> Self {
+        self.opt.peer_keepalive = Duration::from_secs_f64(peer_keepalive);
+        self
+    }
+
+    pub fn set_reconnect_wait(mut self, reconnect_wait: f64) -> Self {
+        self.opt.reconnect_wait = Duration::from_secs_f64(reconnect_wait);
+        self
+    }
+
+    pub fn set_safe_resend_ivl(mut self, safe_resend_ivl: f64) -> Self {
+        self.opt.safe_resend_ivl = Duration::from_secs_f64(safe_resend_ivl);
+        self
+    }
+
+    pub fn set_safe_hash_dedup_ttl(mut self, safe_hash_dedup_ttl: f64) -> Self {
+        self.opt.safe_hash_dedup_ttl = Duration::from_secs_f64(safe_hash_dedup_ttl);
         self
     }
 
