@@ -2,6 +2,7 @@ use std::{hash::Hasher, thread, time::Duration};
 
 use nbmq::{
     SockOpt,
+    frame::DataFrame,
     hash::Fnv1a64,
     queue::{RecvQueue, SendQueue},
 };
@@ -31,7 +32,8 @@ pub fn send_queue_to_recv_queue() {
     sq.push(session, ref_a.as_slice(), 0).unwrap();
 
     while let Some(f) = sq.pull() {
-        rq.push(f.as_slice()).unwrap();
+        let df = DataFrame::parse(&f).unwrap().unwrap();
+        rq.push(&df).unwrap();
     }
 
     let (_a, _a_hash) = rq.pull().unwrap();
@@ -55,7 +57,8 @@ pub fn recv_queue_will_maint_incomplete() {
     sq.push(session, ref_a.as_slice(), 0).unwrap();
 
     if let Some(f) = sq.pull() {
-        rq.push(f.as_slice()).unwrap();
+        let df = DataFrame::parse(&f).unwrap().unwrap();
+        rq.push(&df).unwrap();
     }
 
     sleep(0.2);

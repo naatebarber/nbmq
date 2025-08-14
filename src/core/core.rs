@@ -123,7 +123,7 @@ impl Core {
         return Ok(());
     }
 
-    fn recv_frame(&mut self) -> Result<(Vec<u8>, SocketAddr), Box<dyn Error>> {
+    fn recv_buffer(&mut self) -> Result<(Vec<u8>, SocketAddr), Box<dyn Error>> {
         let mut buffer = vec![0u8; frame::MAX_FRAME_SIZE];
 
         let recv_addr = match &mut self.mode {
@@ -149,32 +149,9 @@ impl Core {
 
     fn control(
         &mut self,
-        data: &[u8],
+        control_frame: &ControlFrame,
         peer_addr: &SocketAddr,
-    ) -> Result<Option<ControlFrame>, Box<dyn Error>> {
-        let Ok(Some(control_frame)) = ControlFrame::parse(&data) else {
-            let Ok(data_frame) = Frame::parse(&data) else {
-                return Ok(None);
-            };
-
-            if let Some(peer) = self.peers.get_mut(&data_frame.session_id) {
-                peer.last_seen = Instant::now();
-                if peer.addr != *peer_addr {
-                    peer.addr = *peer_addr;
-                }
-
-                if Instant::now().duration_since(peer.last_sent) > self.opt.peer_heartbeat_ivl {
-                    peer.last_sent = Instant::now();
-                    self.send_direct(
-                        &ControlFrame::Heartbeat(data_frame.session_id).encode(),
-                        peer_addr,
-                    )?;
-                }
-            }
-
-            return Ok(None);
-        };
-
+    ) -> Result<bool, Box<dyn Error>> {
         match control_frame {
             ControlFrame::Connect => {
                 println!("CONNECT");
@@ -197,12 +174,12 @@ impl Core {
             }
             ControlFrame::Connected(session_id) => {
                 if let SockMode::Connect(ConnectStatus { session, .. }) = &mut self.mode {
-                    *session = session_id;
+                    *session = *session_id;
                     self.peers.drain();
                 }
 
                 self.peers.insert(
-                    session_id,
+                    *session_id,
                     Peer {
                         addr: peer_addr.clone(),
                         last_seen: Instant::now(),
@@ -210,7 +187,7 @@ impl Core {
                     },
                 );
 
-                self.send_direct(&ControlFrame::Heartbeat(session_id).encode(), peer_addr)?;
+                self.send_direct(&ControlFrame::Heartbeat(*session_id).encode(), peer_addr)?;
                 self.peer_update = true;
             }
             ControlFrame::Disconnected(session_id) => {
@@ -231,37 +208,63 @@ impl Core {
                         peer.addr = *peer_addr;
                     }
                 } else {
-                    self.send_direct(&ControlFrame::Disconnected(session_id).encode(), peer_addr)?;
+                    self.send_direct(&ControlFrame::Disconnected(*session_id).encode(), peer_addr)?;
                 };
             }
-            _ => (),
+            // ACKs are control frames, but are handled by the messaging layer.
+            // Forward them with return true.
+            _ => return Ok(true),
         }
 
-        return Ok(Some(control_frame));
+        // All other things handled, don't forward.
+        return Ok(false);
     }
 
-    pub fn recv(&mut self) -> Result<(Vec<u8>, u64, Option<ControlFrame>), Box<dyn Error>> {
+    pub fn recv(&mut self) -> Result<Frame, Box<dyn Error>> {
         loop {
-            let (frame, peer_addr) = self.recv_frame()?;
-            let session = u64::from_be_bytes(frame[2..10].try_into()?);
+            let (buffer, addr) = self.recv_buffer()?;
 
-            let control = match self.control(&frame, &peer_addr) {
-                Ok(control) => control,
-                Err(_) => {
-                    // This error could result from trying to send control messages
-                    // If a send fails, we want to attempt a reconnect.
-                    self.reconnect()?;
-                    None
-                }
+            let Ok(Some(frame)) = Frame::parse(&buffer) else {
+                continue;
             };
 
-            // If the message is not session oriented, it has no
-            // business being promoted to the messaging pattern level
-            if !self.peers.contains_key(&session) {
-                continue;
+            match &frame {
+                Frame::DataFrame(data_frame) => {
+                    if let Some(peer) = self.peers.get_mut(&data_frame.session_id) {
+                        peer.last_seen = Instant::now();
+                        if peer.addr != addr {
+                            peer.addr = addr;
+                        }
+
+                        if Instant::now().duration_since(peer.last_sent)
+                            > self.opt.peer_heartbeat_ivl
+                        {
+                            peer.last_sent = Instant::now();
+                            if let Err(_) = self.send_direct(
+                                &ControlFrame::Heartbeat(data_frame.session_id).encode(),
+                                &addr,
+                            ) {
+                                self.reconnect()?;
+                            }
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+                Frame::ControlFrame(control_frame) => match self.control(control_frame, &addr) {
+                    Ok(forward) => {
+                        if !forward {
+                            continue;
+                        }
+                    }
+                    Err(_) => {
+                        self.reconnect()?;
+                        continue;
+                    }
+                },
             }
 
-            return Ok((frame, session, control));
+            return Ok(frame);
         }
     }
 

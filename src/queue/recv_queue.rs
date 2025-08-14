@@ -5,10 +5,7 @@ use std::{
     time::Instant,
 };
 
-use crate::{
-    SockOpt,
-    frame::{self, Frame},
-};
+use crate::{SockOpt, frame::DataFrame};
 
 #[derive(Clone)]
 pub struct MessagePart {
@@ -33,7 +30,7 @@ impl MessagePart {
         }
     }
 
-    pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, Box<dyn Error>> {
+    pub fn add_frame(&mut self, frame: &DataFrame) -> Result<bool, Box<dyn Error>> {
         if self.assigned == self.size {
             return Ok(false);
         }
@@ -87,7 +84,7 @@ impl IncomingMessage {
         }
     }
 
-    pub fn add_frame(&mut self, frame: &Frame) -> Result<bool, Box<dyn Error>> {
+    pub fn add_frame(&mut self, frame: &DataFrame) -> Result<bool, Box<dyn Error>> {
         let part = &mut self.parts[frame.part_index as usize]
             .get_or_insert(MessagePart::new(frame.part_size));
 
@@ -148,12 +145,7 @@ impl RecvQueue {
         self.last_maint = now;
     }
 
-    pub fn push(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
-        if data.len() < frame::HEADER_SIZE {
-            return Err(Box::new(io::Error::from(io::ErrorKind::InvalidData)));
-        }
-
-        let frame = Frame::parse(data)?;
+    pub fn push(&mut self, frame: &DataFrame) -> Result<(), Box<dyn Error>> {
         let key = (frame.session_id, frame.message_id);
 
         let message = match self.incoming.get_mut(&key) {

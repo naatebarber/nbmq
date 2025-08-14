@@ -5,7 +5,7 @@ use std::io;
 use std::time::Instant;
 
 use crate::SockOpt;
-use crate::frame::{self, Frame};
+use crate::frame::{self, DataFrame};
 use crate::util;
 use crate::util::hash::Fnv1a64;
 
@@ -77,7 +77,7 @@ impl SendQueue {
             part.chunks(frame::MAX_DATA_SIZE).for_each(|chunk| {
                 let chunk_size = chunk.len();
 
-                let frame = Frame::encode(
+                let frame = DataFrame::encode(
                     0,
                     session,
                     message_hash,

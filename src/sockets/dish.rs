@@ -2,6 +2,7 @@ use std::{error::Error, io};
 
 use crate::{
     core::{AsSocket, Core, SockOpt},
+    frame::Frame,
     queue::RecvQueue,
 };
 
@@ -48,12 +49,12 @@ impl AsSocket for Dish {
 
     fn tick(&mut self) -> Result<(), Box<dyn Error>> {
         for _ in 0..self.opt.max_tick_recv {
-            if let Ok((frame, _, control)) = self.core.recv() {
-                if let Some(_) = &control {
+            if let Ok(frame) = self.core.recv() {
+                let Frame::DataFrame(data_frame) = frame else {
                     continue;
-                }
+                };
 
-                if let Err(_) = self.recv_queue.push(&frame) {
+                if let Err(_) = self.recv_queue.push(&data_frame) {
                     break;
                 }
             } else {

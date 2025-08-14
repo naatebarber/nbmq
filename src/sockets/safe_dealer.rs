@@ -1,15 +1,13 @@
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
-    hash::Hasher,
     io,
 };
 
 use crate::{
     core::{AsSocket, Core, SockOpt},
-    frame::ControlFrame,
+    frame::{ControlFrame, Frame},
     queue::{RecvQueue, SendQueue},
-    util::hash::Fnv1a64,
 };
 
 pub struct SafeDealer {
@@ -97,44 +95,46 @@ impl AsSocket for SafeDealer {
 
     fn tick(&mut self) -> Result<(), Box<dyn Error>> {
         for _ in 0..self.opt.max_tick_recv {
-            let Ok((frame, peer, control)) = self.core.recv() else {
+            let Ok(frame) = self.core.recv() else {
                 break;
             };
 
-            if let Some(control) = control {
-                match control {
-                    ControlFrame::Ack((session_id, chunk)) => {
-                        if chunk.len() != 8 {
-                            continue;
+            match frame {
+                Frame::ControlFrame(control_frame) => {
+                    match control_frame {
+                        ControlFrame::Ack((session_id, chunk)) => {
+                            if chunk.len() != 8 {
+                                continue;
+                            }
+
+                            let mut hash_b = [0u8; 8];
+                            hash_b[0..8].copy_from_slice(&chunk[0..8]);
+                            let hash = u64::from_be_bytes(hash_b);
+
+                            let send_queue = self
+                                .send_queues
+                                .entry(session_id)
+                                .or_insert(SendQueue::new(self.opt.clone()));
+
+                            send_queue.confirm_safe(hash);
                         }
+                        _ => (),
+                    };
 
-                        let mut hash_b = [0u8; 8];
-                        hash_b[0..8].copy_from_slice(&chunk[0..8]);
-                        let hash = u64::from_be_bytes(hash_b);
+                    continue;
+                }
+                Frame::DataFrame(data_frame) => {
+                    let hash = data_frame.hash();
 
-                        let send_queue = self
-                            .send_queues
-                            .entry(session_id)
-                            .or_insert(SendQueue::new(self.opt.clone()));
+                    self.core.send_peer(
+                        &ControlFrame::Ack((data_frame.session_id, hash.to_be_bytes().to_vec()))
+                            .encode(),
+                        &data_frame.session_id,
+                    )?;
 
-                        send_queue.confirm_safe(hash);
-                    }
-                    _ => (),
-                };
-
-                continue;
+                    self.recv_queue.push(&data_frame)?;
+                }
             }
-
-            let mut hasher = Fnv1a64::new();
-            hasher.write(&frame);
-            let hash = hasher.finish();
-
-            self.core.send_peer(
-                &ControlFrame::Ack((peer, hash.to_be_bytes().to_vec())).encode(),
-                &peer,
-            )?;
-
-            self.recv_queue.push(&frame)?;
         }
 
         let n_per = if self.send_queues.len() > 0 {

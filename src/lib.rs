@@ -1,6 +1,6 @@
 pub mod api;
 mod core;
-mod frame;
+pub mod frame;
 pub mod queue;
 mod sockets;
 mod util;
