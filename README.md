@@ -100,12 +100,12 @@ let socket = Socket::<Dealer>::new()
 
 ## Usage
 
-#### Socket Types
-- `Dealer`: Fire and forget duplex socket. When a Dealer server has multiple peers, messages sent out are fair-queued.
-- `SafeDealer`: Same as Dealer socket, but frames are acknowledged by the receiver, and resent by the sender if not responded to.
+### Socket Types
+- **Dealer** → Fire and forget duplex socket. When a Dealer server has multiple peers, messages sent out are fair-queued.
+- **SafeDealer** → Same as Dealer socket, but frames are acknowledged by the receiver, and resent by the sender if not responded to.
 The safety levels, including resend-wait, and resend count are configurable through socket options.
-- `Radio`: Fire and forget, send-only, socket. Messages sent out from Radio are queued to all peers at once.
-- `Dish`: Peer socket to Radio, receive only.
+- **Radio** → Fire and forget, send-only, socket. Messages sent out from Radio are queued to all peers at once.
+- **Dish** → Peer socket to Radio, receive only.
 
 #### `AsSocket` Primary Methods
 
@@ -117,7 +117,7 @@ All socket types extend the `AsSocket` trait. The primary methods used for commu
 
 Because the design is timerless, to maintain state, `.tick()` needs to be called once per each iteration of the event loop for every active socket.
 
-#### Duplex Example
+### Duplex Example
 
 Control frames are silently exchanged during calls of `.send()` and `.recv()`, falling back on `.tick()` during periods of inactivity, for connection telemetry.
 
@@ -153,7 +153,7 @@ loop {
 }
 ```
 
-#### Simplex Example
+### Simplex Example
 
 Socket types `Radio` and `Dish` are unidirectional, but control frame flow is still bidirectional. Architecturally, unidirectional sockets share the same communication layer 
 as bidirectional sockets. The difference is within the messaging layer. For example, the `Radio` socket has no receive queue and the `Dish` socket has no send queue.
