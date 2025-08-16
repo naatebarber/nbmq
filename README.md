@@ -107,7 +107,7 @@ The safety levels, including resend-wait, and resend count are configurable thro
 - **Radio** → Fire and forget, send-only, socket. Messages sent out from Radio are queued to all peers at once.
 - **Dish** → Peer socket to Radio, receive only.
 
-#### `AsSocket` Primary Methods
+### `AsSocket` Trait
 
 All socket types extend the `AsSocket` trait. The primary methods used for communication are:
 
@@ -116,6 +116,21 @@ All socket types extend the `AsSocket` trait. The primary methods used for commu
 - `socket.tick()`: Pulls a number of received frame buffers from the underlying connection-level UDP socket, and parses them into Frames. Received control frames update the connection and liveness of the sockets peers. Received data frames are fed into the socket's internal receive queue, and gradually reassembled.
 
 Because the design is timerless, to maintain state, `.tick()` needs to be called once per each iteration of the event loop for every active socket.
+
+### Socket Options
+
+- **send_hwm**: `usize` The maximum number of messages a socket's send queue can hold in memory before throwing `WouldBlock`
+- **recv_hwm**: `usize` The maximum number of messages a socket's receive queue can hold in memory before throwing `WouldBlock`
+- **safe_resend_limit**: `usize` The maximum number of times a DataFrame is allowed to be resent to a peer. Applies to Safe* sockets only.
+- **max_tick_send**: `usize` The maximum number of frames that can be pushed from a socket's send queue, into the underlying raw socket, during a call of `.tick()`.
+- **max_tick_recv**: `usize` The maximum number of frames that can be pulled from the underlying raw socket, into the socket's recv queue, during a call of `.tick()`.
+- **uncompleted_message_ttl**: `f64` The maximum amount of time, in seconds, that a partially complete message will be kept around in memory before being discarded.
+- **queue_maint_ivl**: `f64` The interval, in seconds, of queue cleanup.
+- **peer_heartbeat_ivl**: `f64` The interval, in seconds, that a socket will send a peer a heartbeat.
+- **peer_keepalive**: `f64` The maximum amount of time, in seconds, a peer is retained after going silent.
+- **reconnect_wait**: `f64` The amount of time a connecting socket will wait before trying to reconnect to it's bound peer.
+- **safe_resend_ivl**: `f64` The amount of time a safe socket will wait before resending an unacknowledged frame.
+- **safe_hash_dedup_ttl**: `f64` The amount of time a safe socket will retain a frame hash, for the purpose of deduplicating repeated wire messages.
 
 ### Duplex Example
 
