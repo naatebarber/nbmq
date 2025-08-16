@@ -128,14 +128,10 @@ impl Core {
 
         let recv_addr = match &mut self.mode {
             SockMode::Connect(ConnectStatus { addr, .. }) => {
-                let (bytes_recv, recv_addr) = self.sock.recv_from(&mut buffer)?;
+                let bytes_recv = self.sock.recv(&mut buffer)?;
                 buffer.truncate(bytes_recv);
 
-                if *addr != recv_addr {
-                    *addr = recv_addr;
-                }
-
-                recv_addr
+                *addr
             }
             SockMode::Bind => {
                 let (bytes_recv, recv_addr) = self.sock.recv_from(&mut buffer)?;
@@ -154,7 +150,6 @@ impl Core {
     ) -> Result<bool, Box<dyn Error>> {
         match control_frame {
             ControlFrame::Connect => {
-                println!("CONNECT");
                 let mut hasher = Fnv1a64::new();
                 hasher.write(&self.rng.sample().to_be_bytes());
                 hasher.write(peer_addr.to_string().as_bytes());
@@ -211,13 +206,13 @@ impl Core {
                     self.send_direct(&ControlFrame::Disconnected(*session_id).encode(), peer_addr)?;
                 };
             }
-            // ACKs are control frames, but are handled by the messaging layer.
-            // Forward them with return true.
+            // Any other type of control frame is handled by the messaging layer. Forward them
+            // here.
             _ => return Ok(true),
         }
 
         // All other things handled, don't forward.
-        return Ok(false);
+        Ok(false)
     }
 
     pub fn recv(&mut self) -> Result<Frame, Box<dyn Error>> {
@@ -248,6 +243,10 @@ impl Core {
                             }
                         }
                     } else {
+                        let _ = self.send_direct(
+                            &ControlFrame::Disconnected(data_frame.session_id).encode(),
+                            &addr,
+                        );
                         continue;
                     }
                 }
