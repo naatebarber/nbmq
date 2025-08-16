@@ -88,7 +88,7 @@ The architecture is split into three major parts:
 - The sockets exchange heartbeats periodically, if one side stops sending heartbeats, the other side removes the peer from its internal cache.
 - If the removed peer suddenly sends another message, or heartbeat, it is sent a `Disconnected(session_id)` frame.
 - Upon receiving a `Disconnected(session_id)` frame, the slow peer will respond with a `Connect` frame, attempting to reinitiate the connection through a new handshake.
-- The heartbeat interval, peer timeout durtion, and reconnect wait duration are all configurable through socket configuration.
+- The heartbeat interval, peer timeout durtion, and reconnect wait duration are all configurable through socket options.
 
 ```rust
 let socket = Socket::<Dealer>::new()
