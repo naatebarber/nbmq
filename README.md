@@ -73,6 +73,8 @@ The architecture is split into three major parts:
 - `4` → `Heartbeat(session_id)`  
 - `5` → `Ack(session_id, chunk)` where `chunk` is an identifier of the frame sent, created and ingested by messaging layer sockets. 
 
+## Connection Flow
+
 #### Handshake
 
 1. Client socket A connects, and sends `Connect` control frame to bound peer B.
