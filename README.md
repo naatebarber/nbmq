@@ -67,11 +67,34 @@ The architecture is split into three major parts:
 **Header length:** 10 bytes  
 
 **Kinds:**
-- `1` → `Connect` (no data)  
+- `1` → `Connect` (no data) 
 - `2` → `Connected(session_id)`  
 - `3` → `Disconnected(session_id)`  
 - `4` → `Heartbeat(session_id)`  
 - `5` → `Ack(session_id, chunk)` where `chunk` is an identifier of the frame sent, created and ingested by messaging layer sockets. 
+
+#### Handshake
+
+1. Client socket A connects, and sends `Connect` control frame to bound peer B.
+2. B receives `Connect` frame, derives a socket id from the initial socket address of A, and the time of connection. B adds A internally as a peer.
+3. B sends a `Connected(session_id)` frame back to A, confirming the connection.
+4. A receives this `Connected(session_id)` frame, and adds B as a peer.
+5. A sends a `Heartbeat(session_id)` frame to A, signifying the connection is in place.
+
+#### Liveness
+
+- The sockets exchange heartbeats periodically, if one side stops sending heartbeats, the other side removes the peer from its internal cache.
+- If the removed peer suddenly sends another message, or heartbeat, it is sent a `Disconnected(session_id)` frame.
+- Upon receiving a `Disconnected(session_id)` frame, the slow peer will respond with a `Connect` frame, attempting to reinitiate the connection through a new handshake.
+- The heartbeat interval, peer timeout durtion, and reconnect wait duration are all configurable through socket configuration.
+
+```rust
+let socket = Socket::<Dealer>::new()
+    .set_peer_reconnect_wait(0.5)   // seconds in f64
+    .set_peer_heartbeat_ivl(0.1)    // ...
+    .set_peer_keepalive(1.)         // ...
+    .connect("127.0.0.1:8080")?;
+```
 
 ## Usage
 
