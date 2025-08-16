@@ -25,6 +25,54 @@ I chose UDP initially because it serves as a completely unbiased base transport 
 gradient between the speed/danger of UDP and safety/overhead of TCP. I want the user to be able to configure, with granularity, the exact tradeoff 
 between safety/speed for their sockets. UDP allows for opinionated transport paradigms to be added or peeled away at a whim.
 
+## High Level Architecture
+
+The architecture is split into three major parts:
+
+- `Connection Layer`: manages liveness and peer awareness through control frame kinds 1..4, returns data frames and message-level control frames to the messaging layer above.
+- `Queueing`: handles conversion of binary multipart messages into wire frames, and reassembly on the receiving end. includes methods for opt-in delivery guarantee handling.
+- `Messaging`: user API level, unites the connection and queuing components in a number of ways to achieve different messaging and delivery behaviors.
+
+## Wire Format
+
+### DataFrame (v0.2.0)
+
+| Field           | Size (bytes) | Description                                                   |
+|-----------------|--------------|---------------------------------------------------------------|
+| **version**     | 1            | Protocol version (`0x01`)                                     |
+| **kind**        | 1            | Frame kind (`0 = DataFrame`)                                  |
+| **session_id**  | 8            | Session identifier (u64, big-endian)                          |
+| **message_id**  | 8            | Message identifier (u64, big-endian)                          |
+| **part_count**  | 1            | Total number of parts in this message                         |
+| **part_index**  | 1            | Index of this part (0-based)                                  |
+| **message_size**| 4            | Total size of the full message (bytes)                        |
+| **part_size**   | 4            | Size of this part (bytes)                                     |
+| **chunk_size**  | 2            | Size of this chunk (bytes)                                    |
+| **chunk_offset**| 4            | Offset of this chunk within the part                          |
+| **data**        | variable     | Payload data (`chunk_size` bytes)                             |
+
+**Header length:** 34 bytes  
+**Max frame size:** 500 bytes  
+**Max data size per frame:** 466 bytes  
+
+### ControlFrame (v0.2.0)
+
+| Field          | Size (bytes) | Description                                                   |
+|----------------|--------------|---------------------------------------------------------------|
+| **version**    | 1            | Protocol version (`0x01`)                                     |
+| **kind**       | 1            | Control frame type                                            |
+| **session_id** | 8            | Session identifier (u64, big-endian)                          |
+| **data**       | variable     | Optional payload (depends on kind, e.g. `Ack`)                |
+
+**Header length:** 10 bytes  
+
+**Kinds:**
+- `1` → `Connect` (no data)  
+- `2` → `Connected(session_id)`  
+- `3` → `Disconnected(session_id)`  
+- `4` → `Heartbeat(session_id)`  
+- `5` → `Ack(session_id, chunk)` where `chunk` is an identifier of the frame sent, created and ingested by messaging layer sockets. 
+
 ## Usage
 
 #### Socket Types
@@ -34,10 +82,19 @@ The safety levels, including resend-wait, and resend count are configurable thro
 - `Radio`: Fire and forget, send-only, socket. Messages sent out from Radio are queued to all peers at once.
 - `Dish`: Peer socket to Radio, receive only.
 
-#### Duplex Communication
+#### `AsSocket` Primary Methods
 
-To create a duplex communication regime, we call `.send_multipart()` and `.recv_multipart()` on both sides.
-Control frames are silently exchanged when these methods are called, keeping telemetry current.
+All socket types extend the `AsSocket` trait. The primary methods used for communication are:
+
+- `socket.send(data: &[[u8]])`: Intakes a multipart binary message, and populates the socket's internal send queue. This shards the message into many DataFrames. Each peer of a socket has its own send queue.
+- `socket.recv()`: Pulls a reassembled message out of the socket's receive queue.
+- `socket.tick()`: Pulls a number of received frame buffers from the underlying connection-level UDP socket, and parses them into Frames. Received control frames update the connection and liveness of the sockets peers. Received data frames are fed into the socket's internal receive queue, and gradually reassembled.
+
+Because the design is timerless, to maintain state, `.tick()` needs to be called once per each iteration of the event loop for every active socket.
+
+#### Duplex Example
+
+Control frames are silently exchanged during calls of `.send()` and `.recv()`, falling back on `.tick()` during periods of inactivity, for connection telemetry.
 
 ```rust
 use nbmq::{Socket, Dealer, AsSocket};
@@ -47,11 +104,13 @@ let mut server = Socket::<Dealer>::new().bind("0.0.0.0:8000")?;
 loop {
     let some_data = ["hello".as_bytes()];
 
-    server.send_multipart(&some_data)?;
+    server.send(&some_data)?;
 
-    while let Ok(data) = server.recv_multipart() {
+    while let Ok(data) = server.recv() {
         // ...
     }
+
+    server.tick()?;
 }
 
 // Thread Event Loop 2
@@ -59,49 +118,41 @@ let mut client = Socket::<Dealer>::new().connect("127.0.0.1:8000")?;
 loop {
     let some_data = ["world".as_bytes()];
 
-    client.send_multipart(&some_data)?;
+    client.send(&some_data)?;
 
-    while let Ok(data) = client.recv_multipart() {
+    while let Ok(data) = client.recv() {
         // ..
     }
+
+    client.tick()?;
 }
 ```
 
-#### Simplex Communication
+#### Simplex Example
 
-In situations where one side of a socket pair does all the sending, and the other side
-does all the receiving, we have to call `.drain_control()` on the sending socket. This
-allows for ambient control frames to flow between both sides, keeping system
-telemetry up to date without timers or background threads.
+Socket types `Radio` and `Dish` are unidirectional, but control frame flow is still bidirectional. Architecturally, unidirectional sockets share the same communication layer 
+as bidirectional sockets. The difference is within the messaging layer. For example, the `Radio` socket has no receive queue and the `Dish` socket has no send queue.
 
 ```rust
 use nbmq::{Socket, Radio, Dish, AsSocket};
 
 // Thread Event Loop 1
-let mut server = Socket::<Radio>::new().bind("0.0.0.0:8000")?;
+let mut broadcast = Socket::<Radio>::new().bind("0.0.0.0:8000")?;
 loop {
     let some_data = ["hello".as_bytes()];
 
-    server.send_multipart(&some_data)?;
-    
-    // Since NBMQ is timerless, in order to maintain socket telemetry
-    // we manually drain socket control frames when recv_multipart() is not used.
-    server.drain_control()?;
+    broadcast.send(&some_data)?;
+
+    broadcast.tick()?;
 }
 
 // Thread Event Loop 2
-let mut client = Socket::<Dish>::new().connect("127.0.0.1:8000")?;
+let mut receiver = Socket::<Dish>::new().connect("127.0.0.1:8000")?;
 loop {
-    while let Ok(data) = client.recv_multipart() {
+    while let Ok(data) = receiver.recv() {
         // ..
     }
-}
 
-// Thread Event Loop N
-let mut client = Socket::<Dish>::new().connect("127.0.0.1:8000")?;
-loop {
-    while let Ok(data) = client.recv_multipart() {
-        // ..
-    }
+    receiver.tick()?;
 }
 ```

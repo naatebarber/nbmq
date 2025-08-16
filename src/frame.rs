@@ -126,7 +126,6 @@ pub enum ControlFrame {
     Connect,
     Connected(u64),
     Disconnected(u64),
-    Reconnect(u64),
     Heartbeat(u64),
     Ack((u64, Vec<u8>)),
 }
@@ -148,9 +147,8 @@ impl ControlFrame {
             Self::Connect => ControlFrame::_enc(0, 1, &[]),
             Self::Connected(session) => ControlFrame::_enc(*session, 2, &[]),
             Self::Disconnected(session) => ControlFrame::_enc(*session, 3, &[]),
-            Self::Reconnect(session) => ControlFrame::_enc(*session, 4, &[]),
-            Self::Heartbeat(session) => ControlFrame::_enc(*session, 5, &[]),
-            Self::Ack((session, chunk)) => ControlFrame::_enc(*session, 6, chunk),
+            Self::Heartbeat(session) => ControlFrame::_enc(*session, 4, &[]),
+            Self::Ack((session, chunk)) => ControlFrame::_enc(*session, 5, chunk),
         }
     }
 
@@ -169,13 +167,10 @@ impl ControlFrame {
             3 => Some(ControlFrame::Disconnected(u64::from_be_bytes(
                 buf[2..10].try_into()?,
             ))),
-            4 => Some(ControlFrame::Reconnect(u64::from_be_bytes(
+            4 => Some(ControlFrame::Heartbeat(u64::from_be_bytes(
                 buf[2..10].try_into()?,
             ))),
-            5 => Some(ControlFrame::Heartbeat(u64::from_be_bytes(
-                buf[2..10].try_into()?,
-            ))),
-            6 => Some(ControlFrame::Ack((
+            5 => Some(ControlFrame::Ack((
                 u64::from_be_bytes(buf[2..10].try_into()?),
                 buf[CONTROL_HEADER_SIZE..].to_vec(),
             ))),

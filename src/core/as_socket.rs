@@ -7,6 +7,7 @@ pub trait AsSocket {
 
     /// Create a bound socket at a specified address
     fn bind(addr: &str, opt: SockOpt) -> Result<Self::Output, Box<dyn Error>>;
+
     /// Create a bound socket at a random high port and connect it to a remote address
     fn connect(addr: &str, opt: SockOpt) -> Result<Self::Output, Box<dyn Error>>;
 
