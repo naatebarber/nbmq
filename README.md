@@ -81,7 +81,7 @@ The architecture is split into three major parts:
 2. B receives `Connect` frame, derives a socket id from the initial socket address of A, and the time of connection. B adds A internally as a peer.
 3. B sends a `Connected(session_id)` frame back to A, confirming the connection.
 4. A receives this `Connected(session_id)` frame, and adds B as a peer.
-5. A sends a `Heartbeat(session_id)` frame to A, signifying the connection is in place.
+5. A sends a `Heartbeat(session_id)` frame to B, signifying the connection is in place.
 
 #### Liveness
 
