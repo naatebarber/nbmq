@@ -119,18 +119,20 @@ Because the design is timerless, to maintain state, `.tick()` needs to be called
 
 ### Socket Options
 
-- **send_hwm**: `usize` The maximum number of messages a socket's send queue can hold in memory before throwing `WouldBlock`
-- **recv_hwm**: `usize` The maximum number of messages a socket's receive queue can hold in memory before throwing `WouldBlock`
-- **safe_resend_limit**: `usize` The maximum number of times a DataFrame is allowed to be resent to a peer. Applies to Safe* sockets only.
-- **max_tick_send**: `usize` The maximum number of frames that can be pushed from a socket's send queue, into the underlying raw socket, during a call of `.tick()`.
-- **max_tick_recv**: `usize` The maximum number of frames that can be pulled from the underlying raw socket, into the socket's recv queue, during a call of `.tick()`.
-- **uncompleted_message_ttl**: `f64` The maximum amount of time, in seconds, that a partially complete message will be kept around in memory before being discarded.
-- **queue_maint_ivl**: `f64` The interval, in seconds, of queue cleanup.
-- **peer_heartbeat_ivl**: `f64` The interval, in seconds, that a socket will send a peer a heartbeat.
-- **peer_keepalive**: `f64` The maximum amount of time, in seconds, a peer is retained after going silent.
-- **reconnect_wait**: `f64` The amount of time a connecting socket will wait before trying to reconnect to it's bound peer.
-- **safe_resend_ivl**: `f64` The amount of time a safe socket will wait before resending an unacknowledged frame.
-- **safe_hash_dedup_ttl**: `f64` The amount of time a safe socket will retain a frame hash, for the purpose of deduplicating repeated wire messages.
+| Option                  | Type   | Description                                                                 |
+|-------------------------|--------|-----------------------------------------------------------------------------|
+| `send_hwm`              | usize  | Max messages allowed in the send queue before returning `WouldBlock`.       |
+| `recv_hwm`              | usize  | Max messages allowed in the receive queue before returning `WouldBlock`.    |
+| `safe_resend_limit`     | usize  | Max number of resend attempts for a DataFrame (Safe* sockets only).         |
+| `max_tick_send`         | usize  | Max frames flushed from send queue to the wire per `.tick()`.               |
+| `max_tick_recv`         | usize  | Max frames pulled from the wire into the receive queue per `.tick()`.       |
+| `uncompleted_message_ttl` | f64  | Time (seconds) to retain an incomplete message before discarding.           |
+| `queue_maint_ivl`       | f64    | Interval (seconds) between queue cleanup runs.                              |
+| `peer_heartbeat_ivl`    | f64    | Interval (seconds) to send heartbeat frames to peers.                       |
+| `peer_keepalive`        | f64    | Max time (seconds) to retain a peer after it goes silent.                   |
+| `reconnect_wait`        | f64    | Delay (seconds) before retrying a connection to a peer.                     |
+| `safe_resend_ivl`       | f64    | Wait time (seconds) before resending an unacknowledged frame (Safe* only).  |
+| `safe_hash_dedup_ttl`   | f64    | Time (seconds) to keep frame hashes for deduplication of repeats.           |
 
 ### Duplex Example
 
