@@ -53,6 +53,7 @@ impl SendQueue {
     }
 
     pub fn push(&mut self, session: u64, data: &[&[u8]], nonce: u64) -> Result<(), Box<dyn Error>> {
+        println!("sendhwm: {} cur: {}", self.opt.send_hwm, self.message_count);
         if self.message_count >= self.opt.send_hwm {
             return Err(Box::new(io::Error::from(io::ErrorKind::WouldBlock)));
         }
@@ -111,7 +112,6 @@ impl SendQueue {
                 QueueItem::Frame(f) => return Some(f),
                 QueueItem::Marker => {
                     self.message_count -= 1;
-                    return None;
                 }
             }
         }

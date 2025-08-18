@@ -10,7 +10,9 @@
 - ✅ Flesh out maint() so liveness can be driven solely by tick, in liu of any send or recv operations. should be a backup mechanism, user io driving should be preferred.
 - ✅ Control frames dont need to be the same size/structure as frame. if kind is different I can pretty easily parse it differently, or create another struct.
 - ✅ Send disconnect for ANY frame that comes in, where the peer addr is not recognized. not just heartbeats.
-
+- Test every state change path of core.rs, use coverage to confirm
+- Add a STUN server socket
+- Add socket names, so a STUN socket can provide an index of connected peers
 
 ## Notes
 

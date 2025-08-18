@@ -54,9 +54,7 @@ impl AsSocket for Dish {
                     continue;
                 };
 
-                if let Err(_) = self.recv_queue.push(&data_frame) {
-                    break;
-                }
+                self.recv_queue.push(&data_frame)?;
             } else {
                 break;
             }
