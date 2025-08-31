@@ -93,15 +93,15 @@ impl AsSocket for Dealer {
     }
 
     fn tick(&mut self) -> Result<(), Box<dyn Error>> {
-        for _ in 0..self.opt.max_tick_recv {
-            if let Ok(frame) = self.core.recv() {
-                let Frame::DataFrame(data_frame) = frame else {
-                    continue;
-                };
+        let mut recv_error: Option<Box<dyn Error>> = None;
 
-                self.recv_queue.push(&data_frame)?;
-            } else {
-                break;
+        while let Ok(frame) = self.core.recv() {
+            let Frame::DataFrame(data_frame) = frame else {
+                continue;
+            };
+
+            if let Err(e) = self.recv_queue.push(&data_frame) {
+                recv_error = Some(e);
             }
         }
 
@@ -126,6 +126,10 @@ impl AsSocket for Dealer {
                     }
                 }
             }
+        }
+
+        if let Some(err) = recv_error {
+            return Err(err);
         }
 
         self.core.maint()?;

@@ -35,11 +35,6 @@ impl<T: AsSocket> Socket<T> {
         self
     }
 
-    pub fn set_max_tick_recv(mut self, max_tick_recv: usize) -> Self {
-        self.opt.max_tick_recv = max_tick_recv;
-        self
-    }
-
     pub fn set_uncompleted_message_ttl(mut self, uncompleted_message_ttl: f64) -> Self {
         self.opt.uncompleted_message_ttl = Duration::from_secs_f64(uncompleted_message_ttl);
         self

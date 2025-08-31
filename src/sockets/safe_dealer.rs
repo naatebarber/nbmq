@@ -94,11 +94,9 @@ impl AsSocket for SafeDealer {
     }
 
     fn tick(&mut self) -> Result<(), Box<dyn Error>> {
-        for _ in 0..self.opt.max_tick_recv {
-            let Ok(frame) = self.core.recv() else {
-                break;
-            };
+        let mut recv_error: Option<Box<dyn Error>> = None;
 
+        while let Ok(frame) = self.core.recv() {
             match frame {
                 Frame::ControlFrame(control_frame) => {
                     match control_frame {
@@ -124,15 +122,20 @@ impl AsSocket for SafeDealer {
                     continue;
                 }
                 Frame::DataFrame(data_frame) => {
-                    let hash = data_frame.hash();
+                    if let Err(e) = self.recv_queue.push(&data_frame) {
+                        recv_error = Some(e);
+                    } else {
+                        let hash = data_frame.hash();
 
-                    self.core.send_peer(
-                        &ControlFrame::Ack((data_frame.session_id, hash.to_be_bytes().to_vec()))
+                        let _ = self.core.send_peer(
+                            &ControlFrame::Ack((
+                                data_frame.session_id,
+                                hash.to_be_bytes().to_vec(),
+                            ))
                             .encode(),
-                        &data_frame.session_id,
-                    )?;
-
-                    self.recv_queue.push(&data_frame)?;
+                            &data_frame.session_id,
+                        );
+                    }
                 }
             }
         }
@@ -156,6 +159,10 @@ impl AsSocket for SafeDealer {
                     }
                 }
             }
+        }
+
+        if let Some(e) = recv_error {
+            return Err(e);
         }
 
         self.core.maint()?;

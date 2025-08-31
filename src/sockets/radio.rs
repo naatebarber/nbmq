@@ -76,10 +76,8 @@ impl AsSocket for Radio {
     fn tick(&mut self) -> Result<(), Box<dyn Error>> {
         self.check_peer_update();
 
-        for _ in 0..self.opt.max_tick_recv {
-            if let Err(_) = self.core.recv() {
-                break;
-            }
+        while let Ok(_) = self.core.recv() {
+            continue;
         }
 
         let n_per = if self.send_queues.len() > 0 {

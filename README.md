@@ -125,7 +125,6 @@ Because the design is timerless, to maintain state, `.tick()` needs to be called
 | `recv_hwm`              | usize  | Max messages allowed in the receive queue before returning `WouldBlock`.    |
 | `safe_resend_limit`     | usize  | Max number of resend attempts for a DataFrame (Safe* sockets only).         |
 | `max_tick_send`         | usize  | Max frames flushed from send queue to the wire per `.tick()`.               |
-| `max_tick_recv`         | usize  | Max frames pulled from the wire into the receive queue per `.tick()`.       |
 | `uncompleted_message_ttl` | f64  | Time (seconds) to retain an incomplete message before discarding.           |
 | `queue_maint_ivl`       | f64    | Interval (seconds) between queue cleanup runs.                              |
 | `peer_heartbeat_ivl`    | f64    | Interval (seconds) to send heartbeat frames to peers.                       |

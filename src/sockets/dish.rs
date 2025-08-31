@@ -48,16 +48,20 @@ impl AsSocket for Dish {
     }
 
     fn tick(&mut self) -> Result<(), Box<dyn Error>> {
-        for _ in 0..self.opt.max_tick_recv {
-            if let Ok(frame) = self.core.recv() {
-                let Frame::DataFrame(data_frame) = frame else {
-                    continue;
-                };
+        let mut recv_error: Option<Box<dyn Error>> = None;
 
-                self.recv_queue.push(&data_frame)?;
-            } else {
-                break;
+        while let Ok(frame) = self.core.recv() {
+            let Frame::DataFrame(data_frame) = frame else {
+                continue;
+            };
+
+            if let Err(e) = self.recv_queue.push(&data_frame) {
+                recv_error = Some(e);
             }
+        }
+
+        if let Some(e) = recv_error {
+            return Err(e);
         }
 
         self.core.maint()?;
