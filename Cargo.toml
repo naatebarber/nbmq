@@ -2,5 +2,10 @@
 name = "nbmq"
 version = "0.2.0"
 edition = "2024"
+repository = "https://github.com/naatebarber/nbmq"
+homepage = "https://github.com/naatebarber/nbmq"
+license = "MIT OR Apache-2.0"
+description = "Lightweight timerless messaging queue"
+readme = "README.md"
 
 [dependencies]
