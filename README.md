@@ -12,7 +12,7 @@ follow. No background threads, no hidden state.
 
 ### Zero Dependencies By Design
 
-No dependencies, or at least as few as possible. Absolutely NO externally linked C libraries. 
+No dependencies, or at least as few as possible, no xternally linked C libraries. 
 Everything for NBMQ will be implemented fresh in Rust. I end up building for edge compute systems a lot of the time, 
 and want the footprint of this library to be as small as possible.
 
