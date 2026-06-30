@@ -8,7 +8,7 @@ This library is just meant to take this paradigm further, relinquishing more con
 intended to be more like a toolkit than a plug and play solution, but if you're anything like me, that's a positive.
 
 The entirety of NBMQ is state-stepped when a user performs an operation on a socket. Peer health is managed this way. Backpressure control and message insurance will
-follow. No background threads, no hidden state, no bullshit.
+follow. No background threads, no hidden state.
 
 ### Zero Dependencies By Design
 
